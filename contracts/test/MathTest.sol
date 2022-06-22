@@ -73,4 +73,8 @@ contract MathTest {
     ) external pure returns (uint256) {
         return a.mulDiv(b, denominator);
     }
+
+    function sqrt(uint256 x) external pure returns (uint256) {
+        return x.sqrt();
+    }
 }
