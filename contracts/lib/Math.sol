@@ -44,13 +44,12 @@ library Math {
     function toWad(uint256 amount, uint8 decimals)
         internal
         pure
-        returns (uint256)
+        returns (uint256 b)
     {
         //solhint-disable-next-line no-inline-assembly
         assembly {
             if eq(decimals, 18) {
-                mstore(0x40, amount)
-                return(0x40, 0x20)
+                b := amount
             }
 
             if gt(18, decimals) {
@@ -61,12 +60,12 @@ library Math {
                     revert(0, 0)
                 }
 
-                mstore(0x40, r)
-                return(0x40, 0x20)
+                b := r
             }
 
-            mstore(0x40, div(amount, exp(10, sub(decimals, 18))))
-            return(0x40, 0x20)
+            if lt(18, decimals) {
+                b := div(amount, exp(10, sub(decimals, 18)))
+            }
         }
     }
 
