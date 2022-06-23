@@ -39,14 +39,6 @@ contract MathTest {
         return amount.toWad(decimals);
     }
 
-    function toRay(uint256 amount, uint8 decimals)
-        external
-        pure
-        returns (uint256)
-    {
-        return amount.toRay(decimals);
-    }
-
     function wadToRay(uint256 x) external pure returns (uint256) {
         return x.wadToRay();
     }

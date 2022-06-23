@@ -44,42 +44,29 @@ library Math {
     function toWad(uint256 amount, uint8 decimals)
         internal
         pure
-        returns (uint256 r)
+        returns (uint256)
     {
         //solhint-disable-next-line no-inline-assembly
         assembly {
             if eq(decimals, 18) {
-                r := amount
+                mstore(0x40, amount)
+                return(0x40, 0x20)
             }
 
-            switch and(gt(18, decimals), iszero(eq(decimals, 18)))
-            case 0 {
-                r := div(amount, exp(10, sub(decimals, 18)))
-            }
-            default {
-                r := mul(amount, exp(10, sub(18, decimals)))
-            }
-        }
-    }
+            if gt(18, decimals) {
+                let r := mul(amount, exp(10, sub(18, decimals)))
 
-    function toRay(uint256 amount, uint8 decimals)
-        internal
-        pure
-        returns (uint256 r)
-    {
-        //solhint-disable-next-line no-inline-assembly
-        assembly {
-            if eq(decimals, 27) {
-                r := amount
+                // Protect agaisnt overflow
+                if iszero(eq(div(r, exp(10, sub(18, decimals))), amount)) {
+                    revert(0, 0)
+                }
+
+                mstore(0x40, r)
+                return(0x40, 0x20)
             }
 
-            switch and(gt(27, decimals), iszero(eq(decimals, 27)))
-            case 0 {
-                r := div(amount, exp(10, sub(decimals, 27)))
-            }
-            default {
-                r := mul(amount, exp(10, sub(27, decimals)))
-            }
+            mstore(0x40, div(amount, exp(10, sub(decimals, 18))))
+            return(0x40, 0x20)
         }
     }
 
@@ -107,10 +94,16 @@ library Math {
 
     /**
      * @dev Returns the smallest of two numbers.
-     * Taken from https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/math/Math.sol
      */
-    function min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
+    function min(uint256 a, uint256 b) internal pure returns (uint256 c) {
+        //solhint-disable-next-line no-inline-assembly
+        assembly {
+            c := b
+
+            if gt(b, a) {
+                c := a
+            }
+        }
     }
 
     //solhint-disable
