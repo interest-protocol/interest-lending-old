@@ -4,6 +4,12 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { ContractAddressOrInstance } from '@openzeppelin/hardhat-upgrades/dist/utils';
 import { ethers, network, upgrades } from 'hardhat';
 
+export const ONE_RAY = ethers.BigNumber.from(10).pow(27);
+
+export const ONE_WAD = ethers.BigNumber.from(10).pow(18);
+
+export const WAD_RAY_RATIO = ethers.BigNumber.from(10).pow(9);
+
 export const impersonate = async (
   address: string
 ): Promise<SignerWithAddress> => {
@@ -92,3 +98,9 @@ export const advanceBlockAndTime = async (
   await _ethers.provider.send('evm_increaseTime', [time]);
   await _ethers.provider.send('evm_mine', []);
 };
+
+// Constants
+
+export const USDC_ADDRESS = ethers.utils.getAddress(
+  '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+);
