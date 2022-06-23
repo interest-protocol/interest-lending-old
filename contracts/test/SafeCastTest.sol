@@ -17,9 +17,4 @@ contract SafeCastTest {
     function toUint256(int256 x) external pure returns (uint256) {
         return x.toUint256();
     }
-
-    function failToUint256() external pure returns (uint256) {
-        int256 x = -1000;
-        return x.toUint256();
-    }
 }
