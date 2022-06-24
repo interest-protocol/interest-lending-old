@@ -17,7 +17,7 @@ const JUMP_MULTIPLIER_PER_YEAR = parseEther('0.15');
 
 const KINK = parseEther('0.7');
 
-describe('sut', () => {
+describe('Interest Rate Model', () => {
   let sut: InterestRateModel;
 
   let owner: SignerWithAddress;
@@ -137,7 +137,7 @@ describe('sut', () => {
     );
   });
 
-  describe('function: updateJumpRateModel', () => {
+  describe('function: setInterestRateVars', () => {
     it('reverts if it is called by any account other than the owner', async () => {
       await expect(
         sut.connect(alice).setInterestRateVars(USDC_ADDRESS, 0, 0, 0, 0)

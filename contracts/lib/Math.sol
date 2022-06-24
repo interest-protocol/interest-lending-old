@@ -8,68 +8,89 @@ pragma solidity 0.8.15;
 // taken from https://medium.com/coinmonks/math-in-solidity-part-3-percents-and-proportions-4db014e080b1
 // license is CC-BY-4.0
 library Math {
-    // Scalar of most ERC20 tokens
+    /// @notice Scaling factor of most {ERC20} is 1/1e18
     uint256 private constant WAD = 1e18;
+    /// @notice Higher precision scaling factor for fee calculations
     uint256 private constant RAY = 1e27;
+    /// @notice The ratio between {WAD} and {RAY} scaling factors. E.g. 27 - 18 = 9
     uint256 private constant WAD_RAY_RATIO = 1e9;
 
     /**
-     * @dev Function ensures that the return value keeps the right mantissa
+     * @notice fixed point math multiplication with a scaling factor of 1/e18
+     *
+     * @param x first operand of the multiplication
+     * @param y second operand of the multiplication
+     * @return uint256 The result of the multiplication with a scaling factor of 1/1e18
      */
     function wadMul(uint256 x, uint256 y) internal pure returns (uint256) {
         return mulDiv(x, y, WAD);
     }
 
     /**
-     * @dev Function ensures that the return value keeps the right mantissa
+     * @notice fixed point math division with a scaling factor of 1/e18
+     *
+     * @param x first operand of the division
+     * @param y second operand of the division
+     * @return uint256 The result of the division with a scaling factor of 1/1e18
      */
     function wadDiv(uint256 x, uint256 y) internal pure returns (uint256) {
         return mulDiv(x, WAD, y);
     }
 
     /**
-     * @dev Function ensures that the return value keeps the right mantissa
+     * @notice fixed point math multiplication with a scaling factor of 1/e27
+     *
+     * @param x first operand of the multiplication
+     * @param y second operand of the multiplication
+     * @return uint256 The result of the multiplication with a scaling factor of 1/1e27
      */
     function rayMul(uint256 x, uint256 y) internal pure returns (uint256) {
         return mulDiv(x, y, RAY);
     }
 
     /**
-     * @dev Function ensures that the return value keeps the right mantissa
+     * @notice fixed point math division with a scaling factor of 1/e27
+     *
+     * @param x first operand of the division
+     * @param y second operand of the division
+     * @return uint256 The result of the division with a scaling factor of 1/1e27
      */
     function rayDiv(uint256 x, uint256 y) internal pure returns (uint256) {
         return mulDiv(x, RAY, y);
     }
 
+    /**
+     * @notice It scales the `amount` to a fixed point number with a scaling factor of 1/1e18
+     *
+     * @param amount The number that will be scaled to {WAD}
+     * @param decimals The current exponential of the scaling factor of a base of 10
+     * @return b The new `amount` scaled to a {WAD}
+     */
     function toWad(uint256 amount, uint8 decimals)
         internal
         pure
-        returns (uint256)
+        returns (uint256 b)
     {
         //solhint-disable-next-line no-inline-assembly
         assembly {
             if eq(decimals, 18) {
-                mstore(0x40, amount)
-                return(0x40, 0x20)
+                b := amount
             }
+        }
 
-            if gt(18, decimals) {
-                let r := mul(amount, exp(10, sub(18, decimals)))
-
-                // Protect agaisnt overflow
-                if iszero(eq(div(r, exp(10, sub(18, decimals))), amount)) {
-                    revert(0, 0)
-                }
-
-                mstore(0x40, r)
-                return(0x40, 0x20)
-            }
-
-            mstore(0x40, div(amount, exp(10, sub(decimals, 18))))
-            return(0x40, 0x20)
+        if (18 != decimals) {
+            b = mulDiv(amount, WAD, 10**decimals);
         }
     }
 
+    /**
+     * @notice It scales up a fixed math point number from {WAD} to {RAY}
+     *
+     * @param x The {WAD} number that will be scaled to {RAY}
+     * @return y The {RAY} number version of `x`
+     *
+     * @dev reverts if it overflows
+     */
     function wadToRay(uint256 x) internal pure returns (uint256 y) {
         //solhint-disable-next-line no-inline-assembly
         assembly {
@@ -83,7 +104,12 @@ library Math {
     }
 
     /**
-     *@notice This function always rounds down
+     * @notice It scales down a fixed math point number from {RAY} to {WAD}
+     *
+     * @param x The {RAY} number that will be scaled to {WAD}
+     * @return y The {WAD} number version of `x`
+     *
+     * @dev It will round down and it does not underflow
      */
     function rayToWad(uint256 x) internal pure returns (uint256 y) {
         //solhint-disable-next-line no-inline-assembly
@@ -93,7 +119,11 @@ library Math {
     }
 
     /**
-     * @dev Returns the smallest of two numbers.
+     * @notice It returns the lowest value between two `a` and `b`
+     *
+     * @param a The first operand of the min function
+     * @param b The second operand of the min function
+     * @return c The lowest value between `a` and `b`
      */
     function min(uint256 a, uint256 b) internal pure returns (uint256 c) {
         //solhint-disable-next-line no-inline-assembly
