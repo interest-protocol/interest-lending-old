@@ -56,5 +56,8 @@
     "clean": "npx hardhat clean && rimraf cache && rimraf artifacts",
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage --testfiles './test/**.ts'"
+  },
+  "dependencies": {
+    "@interest-protocol/dex": "^1.0.0"
   }
 }

@@ -104,3 +104,13 @@ export const advanceBlockAndTime = async (
 export const USDC_ADDRESS = ethers.utils.getAddress(
   '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 );
+
+// Chainlink Feeds
+
+export const ETH_USD_FEED = ethers.utils.getAddress(
+  '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
+);
+
+export const BTC_USD_FEED = ethers.utils.getAddress(
+  '0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c'
+);

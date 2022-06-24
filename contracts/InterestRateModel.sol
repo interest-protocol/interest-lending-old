@@ -32,13 +32,15 @@ contract InterestRateModel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice The number of blocks depends on which blockchain this contract is deployed
+     * @notice An estimation of how many blocks a blockchain produces in a year.
+     *
+     * @dev This number depends on which blockchain this contract is deployed on.
      */
     //solhint-disable-next-line var-name-mixedcase
     uint256 public immutable BLOCKS_PER_YEAR;
 
     /**
-     *@notice It allows to fetch the interest rate variables related to a token
+     *@notice It allows to fetch the interest rate variables related to a token.
      */
     mapping(address => InterestRateVars) public getInterestRateVars;
 
@@ -58,12 +60,15 @@ contract InterestRateModel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev Calculates the borrow rate for a lending market
+     * @notice Calculates the borrow rate for the lending market of `token`
      *
-     * @param token The address of the token we are calculating the borrow rate.
-     * @param cash The avaliable liquidity to be borrowed.
+     * @param token The address of the lending market token.
+     * @param cash The avaliable liquidity in the market.
      * @param totalBorrowAmount The total amount being borrowed.
-     * @param reserves Amount of cash that belongs to the reserves.
+     * @param reserves Amount of tokens in the market that belongs to the reserves.
+     * @return uint256 The borrow rater per block.
+     *
+     * @dev The return value has with a scaling factor of 1/1e18.
      */
     function getBorrowRatePerBlock(
         address token,
@@ -75,13 +80,16 @@ contract InterestRateModel is Ownable {
     }
 
     /**
-     * @dev Calculates the supply rate for a lending market using the borrow and utilization rate.
+     * @notice Calculates the supply rate for a lending market using the borrow and utilization rate.
      *
      * @param token The address of the token.
      * @param cash The avaliable liquidity to be borrowed
      * @param totalBorrowAmount The total amount being borrowed
      * @param reserves Amount of cash that belongs to the reserves.
      * @param reserveFactor The % of the interest rate that is to be used for reserves.
+     * @return uint256 The supply rate per block
+     *
+     * @dev The return value has with a scaling factor of 1/1e18.
      */
     function getSupplyRatePerBlock(
         address token,
@@ -109,12 +117,15 @@ contract InterestRateModel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev Internal function to calculate the borrow rate for a lending market
+     * @notice Internal function to calculate the borrow rate for a lending market
      *
      * @param token The address of the token.
      * @param cash The avaliable liquidity to be borrowed.
      * @param totalBorrowAmount The total amount being borrowed.
      * @param reserves Amount of cash that belongs to the reserves.
+     * @return uint256 The borrow rate per block
+     *
+     * @dev The return value has with a scaling factor of 1/1e18.
      */
     function _getBorrowRatePerBlock(
         address token,
@@ -148,11 +159,14 @@ contract InterestRateModel is Ownable {
     }
 
     /**
-     * @dev Calculates how much supply minus reserved is being borrowed.
+     * @notice Calculates the percentage of the funds that are being borrowed excluding the reserves.
      *
      * @param cash The avaliable liquidity to be borrowed
      * @param totalBorrowAmount The total amount being borrowed
      * @param reserves Amount of cash that belongs to the reserves.
+     * @return uint256 The utilization percentage
+     *
+     * @dev The return value has with a scaling factor of 1/1e18.
      */
     function _getUtilizationRate(
         uint256 cash,
@@ -178,6 +192,10 @@ contract InterestRateModel is Ownable {
      * @param multiplierPerYear The multiplier rate charged per year.
      * @param jumpMultiplierPerYear The jump rate multiplier per year.
      * @param kink The utilization rate in which the jump rate is used.
+     *
+     * Requirements:
+     *
+     * - Only the owner can update the {InterestRateVars} for a `token`.
      */
     function setInterestRateVars(
         address token,
