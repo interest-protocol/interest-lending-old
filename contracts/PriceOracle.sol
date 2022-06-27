@@ -10,7 +10,7 @@ import "@interest-protocol/dex/interfaces/IPair.sol";
 
 import "./interfaces/AggregatorV3Interface.sol";
 
-import {UnderlyingType} from "./lib/DataTypes.sol";
+import {AssetType} from "./lib/DataTypes.sol";
 import "./lib/Math.sol";
 import "./lib/SafeCast.sol";
 
@@ -45,13 +45,13 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function getUnderlyingPrice(
         address token,
         uint256 amount,
-        UnderlyingType underlyingType
+        AssetType assetType
     ) external view returns (uint256) {
-        if (underlyingType == UnderlyingType.Standard) {
+        if (assetType == AssetType.Standard) {
             return _getTokenUSDPrice(token, amount);
         }
 
-        if (underlyingType == UnderlyingType.LP) {
+        if (assetType == AssetType.LP) {
             return _getLPTokenUSDPrice(IPair(token), amount);
         }
 

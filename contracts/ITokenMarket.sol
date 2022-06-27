@@ -167,7 +167,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     }
 
     /*///////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
+                            MODIFIER
     //////////////////////////////////////////////////////////////*/
 
     modifier accrue() {
@@ -229,7 +229,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             uint256 newTotalBorrows,
             uint256 newTotalReserves,
             uint256 newBorrowIndex
-        ) = _accrueLogic(block.number - accrualBlockNumber);
+        ) = _accrueView();
 
         LoanTerms memory terms = _loanTermsOf[account];
 
@@ -267,13 +267,11 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      * @notice It returns the current amout of underlying an `account` is borrowing.
      */
     function borrowBalanceOf(address account) external view returns (uint256) {
-        (, , uint256 newBorrowIndex) = _accrueLogic(
-            block.number - accrualBlockNumber
-        );
-
         LoanTerms memory terms = _loanTermsOf[account];
 
         if (terms.principal == 0) return 0;
+
+        (, , uint256 newBorrowIndex) = _accrueView();
 
         return (terms.principal * newBorrowIndex) / terms.index;
     }
@@ -285,9 +283,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         uint256 _totalSupply = totalSupply();
         if (_totalSupply == 0) return _initialExchangeRateMantissa;
 
-        (uint256 newTotalBorrows, uint256 newTotalReserves, ) = _accrueLogic(
-            block.number - accrualBlockNumber
-        );
+        (uint256 newTotalBorrows, uint256 newTotalReserves, ) = _accrueView();
 
         return
             (_getCash() + newTotalBorrows - newTotalReserves).wadMul(

@@ -3,12 +3,12 @@ pragma solidity 0.8.15;
 
 import "@interest-protocol/dex/interfaces/IPair.sol";
 
-import {UnderlyingType} from "../lib/DataTypes.sol";
+import {AssetType} from "../lib/DataTypes.sol";
 
 interface PriceOracleInterface {
-    function getUnderlyingPrice(
+    function getAssetPrice(
         address token,
         uint256 amount,
-        UnderlyingType underlyingType
+        AssetType assetType
     ) external view returns (uint256);
 }

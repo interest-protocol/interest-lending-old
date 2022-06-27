@@ -8,7 +8,7 @@ struct InterestRateVars {
     uint64 kink;
 }
 
-enum UnderlyingType {
+enum AssetType {
     LP,
     InterestBearing,
     Standard
