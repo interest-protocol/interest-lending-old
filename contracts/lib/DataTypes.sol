@@ -7,3 +7,14 @@ struct InterestRateVars {
     uint64 jumpMultiplierPerBlock;
     uint64 kink;
 }
+
+enum UnderlyingType {
+    LP,
+    InterestBearing,
+    Standard
+}
+
+struct LoanTerms {
+    uint256 principal;
+    uint256 index;
+}

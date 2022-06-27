@@ -10,6 +10,7 @@ import "@interest-protocol/dex/interfaces/IPair.sol";
 
 import "./interfaces/AggregatorV3Interface.sol";
 
+import {UnderlyingType} from "./lib/DataTypes.sol";
 import "./lib/Math.sol";
 import "./lib/SafeCast.sol";
 
@@ -37,6 +38,31 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         __Ownable_init();
     }
 
+    /*///////////////////////////////////////////////////////////////
+                            EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function getUnderlyingPrice(
+        address token,
+        uint256 amount,
+        UnderlyingType underlyingType
+    ) external view returns (uint256) {
+        if (underlyingType == UnderlyingType.Standard) {
+            return _getTokenUSDPrice(token, amount);
+        }
+
+        if (underlyingType == UnderlyingType.LP) {
+            return _getLPTokenUSDPrice(IPair(token), amount);
+        }
+
+        //solhint-disable-next-line reason-string
+        revert();
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                            INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /**
      * @notice It calculates the price of USD of a `pair` token for an `amount` based on an fair price from Chainlink.
      *
@@ -46,8 +72,8 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      *
      * @dev It reverts if Chainlink returns a price equal or lower than 0. It also returns the value with a scaling factor of 1/1e18.
      */
-    function getLPTokenUSDPrice(IPair pair, uint256 amount)
-        public
+    function _getLPTokenUSDPrice(IPair pair, uint256 amount)
+        internal
         view
         returns (uint256 price)
     {
@@ -102,8 +128,8 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      *
      * @dev The return value has a scaling factor of 1/1e18. It will revert if Chainlink returns a value equal or lower than zero.
      */
-    function getTokenUSDPrice(address token, uint256 amount)
-        public
+    function _getTokenUSDPrice(address token, uint256 amount)
+        internal
         view
         returns (uint256 price)
     {
