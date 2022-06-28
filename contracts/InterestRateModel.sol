@@ -173,9 +173,12 @@ contract InterestRateModel is Ownable {
         uint256 totalBorrowAmount,
         uint256 reserves
     ) private pure returns (uint256) {
-        if (totalBorrowAmount == 0) return 0;
-
-        return totalBorrowAmount.wadDiv((cash + totalBorrowAmount) - reserves);
+        return
+            totalBorrowAmount == 0
+                ? 0
+                : totalBorrowAmount.wadDiv(
+                    (cash + totalBorrowAmount) - reserves
+                );
     }
 
     /*///////////////////////////////////////////////////////////////

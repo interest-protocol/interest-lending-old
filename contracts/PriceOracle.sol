@@ -42,7 +42,7 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function getUnderlyingPrice(
+    function getAssetPrice(
         address token,
         uint256 amount,
         AssetType assetType

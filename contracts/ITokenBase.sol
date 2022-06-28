@@ -102,10 +102,15 @@ abstract contract ITokenBase is
         PriceOracleInterface _oracle
     ) internal onlyInitializing {
         // Sets the name to "IToken USD Coin"
-        string memory name = string(abi.encodePacked("IToken ", _asset.name()));
-        __ERC20Permit_init(name);
+        string memory _name = string(
+            abi.encodePacked("IToken ", _asset.name())
+        );
+
+        __ERC20Permit_init(_name);
+
         // Sets the symbol to "iUSDC"
-        __ERC20_init(name, string(abi.encodePacked("i", _asset.symbol())));
+        __ERC20_init(_name, string(abi.encodePacked("i", _asset.symbol())));
+
         // Sets the owner to the {msg.sender}
         __Ownable_init();
 
@@ -117,7 +122,10 @@ abstract contract ITokenBase is
         oracle = _oracle;
         accrualBlockNumber = block.number;
         _borrowIndex = 1 ether;
-        _initialExchangeRateMantissa = 10**(_asset.decimals() + 8) * 2;
+
+        unchecked {
+            _initialExchangeRateMantissa = 10**(_asset.decimals() + 8) * 2;
+        }
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -148,8 +156,8 @@ abstract contract ITokenBase is
     ) public override nonReentrant returns (bool) {
         require(manager.transferAllowed(address(this), from, to, amount));
         require(from != to);
-        address spender = _msgSender();
-        _spendAllowance(from, spender, amount);
+
+        _spendAllowance(from, _msgSender(), amount);
         _transfer(from, to, amount);
         return true;
     }
