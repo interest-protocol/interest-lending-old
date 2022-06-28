@@ -22,3 +22,19 @@ error ZeroAddressNotAllowed();
 error NotEnoughCash();
 
 error InvalidBorrowRate();
+
+error BorrowNotAllowed();
+
+error RepayNotAllowed();
+
+error LiquidateNotAllowed();
+
+error InvalidLiquidator();
+
+error SeizeNotAllowed();
+
+error ReserveFactorOutOfBounds();
+
+error NotAuthorized();
+
+error NotEnoughReserves();

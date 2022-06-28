@@ -8,9 +8,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./interfaces/InterestRateModelInterface.sol";
 import "./interfaces/ITokenMarketInterface.sol";
 import "./interfaces/ManagerInterface.sol";
-import "./interfaces/PriceOracleInterface.sol";
 
-import {ZeroAmountNotAllowed, DepositNotAllowed, WithdrawNotAllowed, NotEnoughCash, InvalidBorrowRate} from "./lib/Errors.sol";
+import "./lib/Errors.sol";
 import "./lib/Math.sol";
 
 import "./ITokenBase.sol";
@@ -32,6 +31,33 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      */
     InterestRateModelInterface public interestRateModel;
 
+    /**
+     * @notice Sanity check to make sure the borrow rate is not very high (.0005% / block). Token from Compound.
+     */
+    uint256 internal constant RESERVE_FACTOR_MAX_MANTISSA = 0.3e18;
+
+    /**
+     * @notice Share of seized collateral that is added to reserves.
+     */
+    uint256 internal constant PROTOCOL_SEIZE_SHARE_MANTISSA = 0.28e18; //2.8%
+
+    /**
+     * @notice Percentage of the borrow rate kept by the protocol as reserves.
+     */
+    uint256 public reserveFactorMantissa;
+
+    /**
+     * @notice Total amount of reserves of the asset held in this market
+     */
+    uint256 internal _totalReserves;
+
+    /**
+     * @notice The initial exchangeRate when the totalSupply is 0 ADD 8
+     */
+    uint256 internal _initialExchangeRateMantissa;
+
+    uint256 internal _totalReservesShares;
+
     /*///////////////////////////////////////////////////////////////
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
@@ -43,11 +69,16 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     function __ITokenMarket_ini(
         IERC20MetadataUpgradeable _asset,
         ManagerInterface _manager,
-        PriceOracleInterface _oracle,
         InterestRateModelInterface _interestRateModel
     ) external initializer {
-        __ITokenBase_init(_asset, _manager, _oracle);
+        __ITokenBase_init(_asset, _manager);
         interestRateModel = _interestRateModel;
+
+        reserveFactorMantissa = 0.2e18;
+
+        unchecked {
+            _initialExchangeRateMantissa = 10**(_asset.decimals() + 8) * 2;
+        }
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -187,7 +218,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     function borrowRatePerBlock() public view returns (uint256) {
         return
             interestRateModel.getBorrowRatePerBlock(
-                asset,
+                address(this),
                 _getCash(),
                 _totalBorrows,
                 _totalReserves
@@ -201,7 +232,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     function supplyRatePerBlock() public view returns (uint256) {
         return
             interestRateModel.getSupplyRatePerBlock(
-                asset,
+                address(this),
                 _getCash(),
                 _totalBorrows,
                 _totalReserves,
@@ -223,7 +254,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             uint256 rate // exchangeRate
         )
     {
-        uint256 _totalSupply = totalSupply();
+        uint256 supply = _totalSupply();
         iTokenBalance = balanceOf(account);
 
         (
@@ -238,13 +269,13 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             ? 0
             : (terms.principal * newBorrowIndex) / terms.index;
 
-        rate = _totalSupply == 0
+        rate = supply == 0
             ? _initialExchangeRateMantissa
             : _calculateExchangeRate(
                 _getCash(),
                 newTotalBorrows,
                 newTotalReserves,
-                _totalSupply
+                supply
             );
     }
 
@@ -267,21 +298,17 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      * @notice It returns the current amout of underlying an `account` is borrowing.
      */
     function borrowBalanceOf(address account) external view returns (uint256) {
-        LoanTerms memory terms = _loanTermsOf[account];
-
-        if (terms.principal == 0) return 0;
-
         (, , uint256 newBorrowIndex) = _accrueView();
 
-        return (terms.principal * newBorrowIndex) / terms.index;
+        return _unsafeBorrowBalanceOf(account, newBorrowIndex);
     }
 
     /**
      * @notice It returns the current exchange rate
      */
     function exchangeRate() public view returns (uint256) {
-        uint256 _totalSupply = totalSupply();
-        if (_totalSupply == 0) return _initialExchangeRateMantissa;
+        uint256 supply = _totalSupply();
+        if (supply == 0) return _initialExchangeRateMantissa;
 
         (uint256 newTotalBorrows, uint256 newTotalReserves, ) = _accrueView();
 
@@ -290,8 +317,16 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                 _getCash(),
                 newTotalBorrows,
                 newTotalReserves,
-                _totalSupply
+                supply
             );
+    }
+
+    function accrueMarket() external {
+        _accrue();
+    }
+
+    function getCash() external view returns (uint256) {
+        return _getCash();
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -360,6 +395,104 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         );
     }
 
+    function borrow(address receiver, uint256 assets)
+        external
+        accrue
+        nonReentrant
+    {
+        if (0 == assets) revert ZeroAmountNotAllowed();
+
+        if (assets > _getCash()) revert NotEnoughCash();
+
+        address sender = _msgSender();
+
+        if (!manager.borrowAllowed(address(this), sender, receiver, assets))
+            revert BorrowNotAllowed();
+
+        uint256 newAccountBorrow = _unsafeBorrowBalanceOf(
+            sender,
+            _borrowIndex
+        ) + assets;
+
+        _loanTermsOf[sender].principal = newAccountBorrow;
+        _loanTermsOf[sender].index = _borrowIndex;
+        _totalBorrows += assets;
+
+        IERC20Upgradeable(asset).safeTransfer(receiver, assets);
+
+        emit Borrow(sender, receiver, assets);
+    }
+
+    function repay(address borrower, uint256 assets)
+        external
+        accrue
+        nonReentrant
+    {
+        _repay(_msgSender(), borrower, assets);
+    }
+
+    function liquidate(
+        address borrower,
+        uint256 assets,
+        ITokenMarketInterface collateralMarket
+    ) external accrue nonReentrant {
+        address liquidator = _msgSender();
+
+        if (liquidator == borrower) revert InvalidLiquidator();
+
+        if (
+            !manager.liquidateAllowed(
+                address(collateralMarket),
+                address(this),
+                liquidator,
+                borrower,
+                assets
+            )
+        ) revert LiquidateNotAllowed();
+
+        bool sameMarket = collateralMarket == this;
+
+        // If it this market, we already accrued on the modifier
+        if (!sameMarket) collateralMarket.accrueMarket();
+
+        // Liquidator repays the loan
+        uint256 repayAmount = _repay(liquidator, borrower, assets);
+
+        uint256 seizeAmount = manager.liquidateCalculateSeizeTokens(
+            address(collateralMarket),
+            address(this),
+            repayAmount
+        );
+
+        if (sameMarket) {
+            _seize(
+                address(collateralMarket),
+                liquidator,
+                borrower,
+                seizeAmount
+            );
+        } else {
+            collateralMarket.seize(liquidator, borrower, seizeAmount);
+        }
+
+        emit Liquidate(
+            liquidator,
+            borrower,
+            repayAmount,
+            seizeAmount,
+            address(collateralMarket),
+            address(this)
+        );
+    }
+
+    function seize(
+        address liquidator,
+        address borrower,
+        uint256 assets
+    ) external nonReentrant {
+        _seize(_msgSender(), liquidator, borrower, assets);
+    }
+
     /*///////////////////////////////////////////////////////////////
                               Internal
     //////////////////////////////////////////////////////////////*/
@@ -373,6 +506,12 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         return (cash + borrows - reserves).wadMul(supply);
     }
 
+    function _totalSupply() internal view returns (uint256) {
+        unchecked {
+            return totalSupply() - _totalReservesShares;
+        }
+    }
+
     function _getCash() internal view returns (uint256) {
         return IERC20Upgradeable(asset).balanceOf(address(this));
     }
@@ -382,24 +521,31 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             revert InvalidBorrowRate();
     }
 
-    function _blocksDelta() internal view returns (uint256) {
-        unchecked {
-            return block.number - accrualBlockNumber;
-        }
-    }
-
     function _unsafeExchangeRate() internal view returns (uint256) {
-        uint256 _totalSupply = totalSupply();
+        uint256 supply = _totalSupply();
 
         return
-            _totalSupply == 0
+            supply == 0
                 ? _initialExchangeRateMantissa
                 : _calculateExchangeRate(
                     _getCash(),
                     _totalBorrows,
                     _totalReserves,
-                    _totalSupply
+                    supply
                 );
+    }
+
+    function _unsafeBorrowBalanceOf(address account, uint256 borrowIndex)
+        internal
+        view
+        returns (uint256)
+    {
+        LoanTerms memory terms = _loanTermsOf[account];
+
+        return
+            terms.principal == 0
+                ? 0
+                : (terms.principal * borrowIndex) / terms.index;
     }
 
     function _deposit(
@@ -407,7 +553,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         uint256 assets,
         uint256 shares
     ) internal {
-        if (0 > shares || 0 > assets) revert ZeroAmountNotAllowed();
+        if (0 != shares || 0 != assets) revert ZeroAmountNotAllowed();
 
         address sender = _msgSender();
 
@@ -433,7 +579,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         uint256 assets,
         uint256 shares
     ) internal {
-        if (0 > assets || 0 > shares) revert ZeroAmountNotAllowed();
+        if (0 != assets || 0 != shares) revert ZeroAmountNotAllowed();
 
         if (!manager.withdrawAllowed(address(this), owner, receiver, assets))
             revert WithdrawNotAllowed();
@@ -453,6 +599,72 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         emit Withdraw(sender, receiver, assets, shares);
     }
 
+    function _repay(
+        address sender,
+        address borrower,
+        uint256 assets
+    ) internal returns (uint256 safeRepayAmount) {
+        if (0 == assets) revert ZeroAmountNotAllowed();
+
+        if (!manager.repayAllowed(address(this), sender, borrower, assets))
+            revert RepayNotAllowed();
+
+        uint256 accountBorrow = _unsafeBorrowBalanceOf(borrower, _borrowIndex);
+
+        safeRepayAmount = assets > accountBorrow ? accountBorrow : assets;
+
+        // Want to get the tokens before updating the state
+        IERC20Upgradeable(asset).safeTransferFrom(
+            sender,
+            address(this),
+            assets
+        );
+
+        _loanTermsOf[borrower].principal = accountBorrow - safeRepayAmount;
+        _loanTermsOf[borrower].index = _borrowIndex;
+        _totalBorrows -= safeRepayAmount;
+
+        emit Repay(sender, borrower, safeRepayAmount);
+    }
+
+    function _seize(
+        address borrowMarket,
+        address liquidator,
+        address borrower,
+        uint256 assets
+    ) internal {
+        if (
+            !manager.seizeAllowed(
+                address(this),
+                borrowMarket,
+                liquidator,
+                borrower,
+                assets
+            )
+        ) revert SeizeNotAllowed();
+
+        uint256 protocolAmount = assets.wadMul(PROTOCOL_SEIZE_SHARE_MANTISSA);
+        uint256 liquidatorAmount = assets - protocolAmount;
+
+        uint256 reserves = _totalReserves;
+
+        // Only function {liquidate} can call this function and accrued has been called already.
+        uint256 rate = _calculateExchangeRate(
+            _getCash(),
+            _totalBorrows,
+            reserves,
+            _totalSupply()
+        );
+
+        _totalReserves = reserves + protocolAmount;
+        _totalReservesShares += protocolAmount.wadDiv(rate);
+
+        // Seize tokens from `borrower`
+        _burn(borrower, assets);
+        // Reward the liquidator
+        _mint(liquidator, liquidatorAmount);
+    }
+
     /**
      * @notice This function applies a simple interest rate to the following state  {totalBorrows}, {totalReserves}, {index}.
      *
@@ -467,18 +679,18 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             uint256
         )
     {
-        (
-            uint256 prevTotalborrow,
-            uint256 prevReserves,
-            uint256 prevBorrowIndex
-        ) = (_totalBorrows, _totalReserves, _borrowIndex);
+        (uint256 prevTotalborrow, uint256 prevBorrowIndex) = (
+            _totalBorrows,
+            _borrowIndex
+        );
 
-        uint256 interest = blocksDelta * _safeBorrowRatePerBlock();
+        uint256 interest = blocksDelta.unsafeMul(_safeBorrowRatePerBlock());
+
         uint256 interestAccumulated = interest.wadMul(prevTotalborrow);
 
         return (
             interestAccumulated + prevTotalborrow,
-            interestAccumulated.wadMul(reserveFactorMantissa) + prevReserves,
+            interestAccumulated.wadMul(reserveFactorMantissa) + _totalReserves,
             interest.wadMul(prevBorrowIndex) + prevBorrowIndex
         );
     }
@@ -522,5 +734,59 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         _borrowIndex = index;
 
         emit Accrue(borrows, reserves, index);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                             OWNER ONLY
+    //////////////////////////////////////////////////////////////*/
+
+    function updateReserveFactor(uint256 factor) external onlyOwner {
+        if (factor >= RESERVE_FACTOR_MAX_MANTISSA)
+            revert ReserveFactorOutOfBounds();
+
+        _accrue();
+
+        emit NewReserveFactor(reserveFactorMantissa, factor);
+
+        reserveFactorMantissa = factor;
+    }
+
+    function addReserves(uint256 amount) external onlyOwner {
+        if (amount == 0) revert ZeroAmountNotAllowed();
+
+        _accrue();
+
+        address sender = _msgSender();
+
+        IERC20Upgradeable(asset).safeTransferFrom(
+            sender,
+            address(this),
+            amount
+        );
+
+        _totalReserves += amount;
+
+        emit AddReserves(sender, amount, _totalReserves);
+    }
+
+    function removeReserves(uint256 amount) external onlyOwner {
+        if (amount == 0) revert ZeroAmountNotAllowed();
+
+        if (amount > _getCash()) revert NotEnoughCash();
+
+        uint256 reserves = _totalReserves;
+
+        if (amount > reserves) revert NotEnoughReserves();
+
+        _accrue();
+
+        reserves -= amount;
+        _totalReserves = reserves;
+
+        address sender = _msgSender();
+
+        IERC20Upgradeable(asset).safeTransfer(sender, amount);
+
+        emit AddReserves(sender, amount, reserves);
     }
 }

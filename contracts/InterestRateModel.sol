@@ -3,6 +3,8 @@ pragma solidity 0.8.15;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+import "./interfaces/ITokenMarketInterface.sol";
+
 import {InterestRateVars} from "./lib/DataTypes.sol";
 import "./lib/Math.sol";
 import "./lib/SafeCast.sol";
@@ -13,7 +15,7 @@ contract InterestRateModel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     event NewInterestRateVars(
-        address indexed token,
+        address indexed market,
         uint64 indexed baseRatePerBlock,
         uint64 indexed multiplierPerBlock,
         uint64 jumpMultiplierPerBlock,
@@ -190,7 +192,7 @@ contract InterestRateModel is Ownable {
      *
      * @notice Some of the parameters are set per year
      *
-     * @param token The ERC20 address of the token.
+     * @param market The address of an ITokenMarket.
      * @param baseRatePerYear The minimum rate charged per year.
      * @param multiplierPerYear The multiplier rate charged per year.
      * @param jumpMultiplierPerYear The jump rate multiplier per year.
@@ -201,12 +203,13 @@ contract InterestRateModel is Ownable {
      * - Only the owner can update the {InterestRateVars} for a `token`.
      */
     function setInterestRateVars(
-        address token,
+        ITokenMarketInterface market,
         uint256 baseRatePerYear,
         uint256 multiplierPerYear,
         uint256 jumpMultiplierPerYear,
         uint256 kink
     ) external onlyOwner {
+        market.accrueMarket();
         // Convert the be per block instead of per year.
         // Convert the to uint64 for optimization.
         uint64 baseRatePerBlock = (baseRatePerYear / BLOCKS_PER_YEAR)
@@ -224,10 +227,10 @@ contract InterestRateModel is Ownable {
         );
 
         // Update storage
-        getInterestRateVars[token] = vars;
+        getInterestRateVars[address(market)] = vars;
 
         emit NewInterestRateVars(
-            token,
+            address(market),
             baseRatePerBlock,
             multiplierPerBlock,
             jumpMultiplierPerBlock,

@@ -8,12 +8,11 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
-import "./interfaces/IERC4626.sol";
+import "./interfaces/ITokenBaseInterface.sol";
 import "./interfaces/ManagerInterface.sol";
-import "./interfaces/PriceOracleInterface.sol";
 
 import {LoanTerms} from "./lib/DataTypes.sol";
-import {InvalidReceiver, TransferNotAllowed} from "./lib/Errors.sol";
+import {InvalidReceiver, TransferNotAllowed, ZeroAddressNotAllowed} from "./lib/Errors.sol";
 
 abstract contract ITokenBase is
     Initializable,
@@ -21,7 +20,7 @@ abstract contract ITokenBase is
     ERC20PermitUpgradeable,
     OwnableUpgradeable,
     UUPSUpgradeable,
-    IERC4626
+    ITokenBaseInterface
 {
     /*///////////////////////////////////////////////////////////////
                                 STATE
@@ -33,19 +32,9 @@ abstract contract ITokenBase is
     uint256 internal constant BORROW_RATE_MAX_MANTISSA = 0.0005e16;
 
     /**
-     * @notice Share of seized collateral that is added to reserves.
-     */
-    uint256 internal constant PROTOCOL_SEIZE_SHARE_MANTISSA = 0.28e18; //2.8%
-
-    /**
      * @notice Contract which manages interaction between I Tokens.
      */
     ManagerInterface public manager;
-
-    /**
-     * @notice Contrac that calculates the price of the asset asset in USD
-     */
-    PriceOracleInterface public oracle;
 
     /**
      * @notice The asset held by this IToken.
@@ -54,12 +43,8 @@ abstract contract ITokenBase is
     /**
      * @notice Block number that interest was last accrued at
      */
-    uint256 public accrualBlockNumber;
 
-    /**
-     * @notice Percentage of the borrow rate kept by the protocol as reserves.
-     */
-    uint256 public reserveFactorMantissa;
+    uint256 public accrualBlockNumber;
 
     /**
      * @notice Maps an account to it's loan terms
@@ -76,16 +61,6 @@ abstract contract ITokenBase is
      */
     uint256 internal _totalBorrows;
 
-    /**
-     * @notice Total amount of reserves of the asset held in this market
-     */
-    uint256 internal _totalReserves;
-
-    /**
-     * @notice The initial exchangeRate when the totalSupply is 0 ADD 8
-     */
-    uint256 internal _initialExchangeRateMantissa;
-
     /*///////////////////////////////////////////////////////////////
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
@@ -99,8 +74,7 @@ abstract contract ITokenBase is
     //solhint-disable-next-line func-name-mixedcase
     function __ITokenBase_init(
         IERC20MetadataUpgradeable _asset,
-        ManagerInterface _manager,
-        PriceOracleInterface _oracle
+        ManagerInterface _manager
     ) internal onlyInitializing {
         // Sets the name to "IToken USD Coin"
         string memory _name = string(
@@ -120,17 +94,12 @@ abstract contract ITokenBase is
         // Global state
         asset = address(_asset);
         manager = _manager;
-        oracle = _oracle;
         accrualBlockNumber = block.number;
         _borrowIndex = 1 ether;
-
-        unchecked {
-            _initialExchangeRateMantissa = 10**(_asset.decimals() + 8) * 2;
-        }
     }
 
     /*///////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
+                            ERC20 VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -141,7 +110,7 @@ abstract contract ITokenBase is
     }
 
     /*///////////////////////////////////////////////////////////////
-                              ERC20 modified
+                              ERC20 IMPURE modified
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -189,21 +158,13 @@ abstract contract ITokenBase is
     }
 
     /*///////////////////////////////////////////////////////////////
-                              OWNER ONLY
+                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @notice Allows the owner to update the {reserveFactorMantissa}
-     */
-    function updateReserveFactorMantissa(uint256 factor) external onlyOwner {
-        reserveFactorMantissa = factor;
-    }
-
-    /**
-     * @notice Allows the owner to update the {reserveFactorMantissa}
-     */
-    function updateManager(ManagerInterface _manager) external onlyOwner {
-        manager = _manager;
+    function _blocksDelta() internal view returns (uint256) {
+        unchecked {
+            return block.number - accrualBlockNumber;
+        }
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -221,5 +182,16 @@ abstract contract ITokenBase is
     //solhint-disable-next-line no-empty-blocks
     {
 
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                             OWNER ONLY
+    //////////////////////////////////////////////////////////////*/
+
+    function updateManager(ManagerInterface _manager) external onlyOwner {
+        if (address(_manager) == address(0)) revert ZeroAddressNotAllowed();
+
+        emit NewManager(address(manager), address(_manager));
+        manager = _manager;
     }
 }

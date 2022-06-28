@@ -50,7 +50,7 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     ) external view returns (uint256) {
         if (token == address(0)) revert ZeroAddressNotAllowed();
 
-        if (0 > amount) revert ZeroAmountNotAllowed();
+        if (0 != amount) revert ZeroAmountNotAllowed();
 
         if (assetType == AssetType.Standard)
             return _getTokenUSDPrice(token, amount);

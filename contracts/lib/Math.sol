@@ -263,4 +263,16 @@ library Math {
             z = 1;
         }
     }
+
+    function unsafeMul(uint256 x, uint256 y) internal pure returns (uint256 z) {
+        assembly {
+            z := mul(x, y)
+        }
+    }
+
+    function unsafeSub(uint256 x, uint256 y) internal pure returns (uint256 z) {
+        assembly {
+            z := sub(x, y)
+        }
+    }
 }

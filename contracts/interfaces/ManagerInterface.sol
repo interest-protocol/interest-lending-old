@@ -10,16 +10,52 @@ interface ManagerInterface {
     ) external returns (bool);
 
     function depositAllowed(
-        address,
-        address,
-        address,
-        uint256
+        address iToken,
+        address from,
+        address to,
+        uint256 assets
     ) external returns (bool);
 
     function withdrawAllowed(
-        address,
-        address,
-        address,
-        uint256
+        address iToken,
+        address from,
+        address to,
+        uint256 assets
     ) external returns (bool);
+
+    function borrowAllowed(
+        address iToken,
+        address from,
+        address to,
+        uint256 assets
+    ) external returns (bool);
+
+    function repayAllowed(
+        address iToken,
+        address from,
+        address to,
+        uint256 assets
+    ) external returns (bool);
+
+    function liquidateAllowed(
+        address collateralMarket,
+        address borrowMarket,
+        address liquidator,
+        address borrower,
+        uint256 assets
+    ) external returns (bool);
+
+    function seizeAllowed(
+        address collateralMarket,
+        address borrowMarket,
+        address liquidator,
+        address borrower,
+        uint256 amount
+    ) external returns (bool);
+
+    function liquidateCalculateSeizeTokens(
+        address collateralMarket,
+        address borrowMarket,
+        uint256 repayAmount
+    ) external returns (uint256 seizeAmount);
 }

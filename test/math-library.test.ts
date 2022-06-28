@@ -13,6 +13,10 @@ describe('MathLib', function () {
     sut = await deploy('MathTest', []);
   });
 
+  it.only('gas test', async () => {
+    await sut.wadMul(parseEther('10'), parseEther('2.5'));
+  });
+
   it('properly multiplies two WADs', async () => {
     expect(await sut.wadMul(parseEther('10'), parseEther('2.5'))).to.be.equal(
       parseEther('10').mul(parseEther('2.5')).div(ONE_WAD)
