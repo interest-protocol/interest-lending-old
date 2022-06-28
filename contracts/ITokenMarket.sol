@@ -267,7 +267,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
 
         borrowBalance = terms.principal == 0
             ? 0
-            : (terms.principal * newBorrowIndex) / terms.index;
+            : _calculateBorrowBalanceOf(_loanTermsOf[account], newBorrowIndex);
 
         rate = supply == 0
             ? _initialExchangeRateMantissa
@@ -300,7 +300,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     function borrowBalanceOf(address account) external view returns (uint256) {
         (, , uint256 newBorrowIndex) = _accrueView();
 
-        return _unsafeBorrowBalanceOf(account, newBorrowIndex);
+        return _calculateBorrowBalanceOf(_loanTermsOf[account], newBorrowIndex);
     }
 
     /**
@@ -409,13 +409,19 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         if (!manager.borrowAllowed(address(this), sender, receiver, assets))
             revert BorrowNotAllowed();
 
-        uint256 newAccountBorrow = _unsafeBorrowBalanceOf(
-            sender,
+        LoanTerms memory terms = _loanTermsOf[sender];
+
+        uint256 newAccountBorrow = _calculateBorrowBalanceOf(
+            terms,
             _borrowIndex
         ) + assets;
 
-        _loanTermsOf[sender].principal = newAccountBorrow;
-        _loanTermsOf[sender].index = _borrowIndex;
+        // Update in memory
+        terms.principal = newAccountBorrow;
+        terms.index = _borrowIndex;
+
+        // Update storage
+        _loanTermsOf[sender] = terms;
         _totalBorrows += assets;
 
         IERC20Upgradeable(asset).safeTransfer(receiver, assets);
@@ -506,6 +512,16 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         return (cash + borrows - reserves).wadMul(supply);
     }
 
+    function _calculateBorrowBalanceOf(
+        LoanTerms memory terms,
+        uint256 borrowIndex
+    ) internal pure returns (uint256) {
+        return
+            terms.principal == 0
+                ? 0
+                : (terms.principal * borrowIndex) / terms.index;
+    }
+
     function _totalSupply() internal view returns (uint256) {
         unchecked {
             return totalSupply() - _totalReservesShares;
@@ -533,19 +549,6 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                     _totalReserves,
                     supply
                 );
-    }
-
-    function _unsafeBorrowBalanceOf(address account, uint256 borrowIndex)
-        internal
-        view
-        returns (uint256)
-    {
-        LoanTerms memory terms = _loanTermsOf[account];
-
-        return
-            terms.principal == 0
-                ? 0
-                : (terms.principal * borrowIndex) / terms.index;
     }
 
     function _deposit(
@@ -609,7 +612,9 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         if (!manager.repayAllowed(address(this), sender, borrower, assets))
             revert RepayNotAllowed();
 
-        uint256 accountBorrow = _unsafeBorrowBalanceOf(borrower, _borrowIndex);
+        LoanTerms memory terms = _loanTermsOf[borrower];
+
+        uint256 accountBorrow = _calculateBorrowBalanceOf(terms, _borrowIndex);
 
         safeRepayAmount = assets > accountBorrow ? accountBorrow : assets;
 
@@ -620,8 +625,12 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             assets
         );
 
-        _loanTermsOf[borrower].principal = accountBorrow - safeRepayAmount;
-        _loanTermsOf[borrower].index = _borrowIndex;
+        // Update memory
+        terms.principal = accountBorrow - safeRepayAmount;
+        terms.index = _borrowIndex;
+
+        // Update storage
+        _loanTermsOf[borrower] = terms;
         _totalBorrows -= safeRepayAmount;
 
         emit Repay(sender, borrower, safeRepayAmount);
