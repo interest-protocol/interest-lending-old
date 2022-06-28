@@ -10,6 +10,7 @@ import "./interfaces/ITokenMarketInterface.sol";
 import "./interfaces/ManagerInterface.sol";
 import "./interfaces/PriceOracleInterface.sol";
 
+import {ZeroAmountNotAllowed, DepositNotAllowed, WithdrawNotAllowed, NotEnoughCash, InvalidBorrowRate} from "./lib/Errors.sol";
 import "./lib/Math.sol";
 
 import "./ITokenBase.sol";
@@ -245,7 +246,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     }
 
     /**
-     * @notice It returns the key information related to a loan
+     * @notice It returns the key information related to the global loan
      */
     function loanData()
         external
@@ -302,27 +303,11 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         nonReentrant
         returns (uint256 shares)
     {
-        require(assets > 0);
-        address sender = _msgSender();
-
-        // Make sure minting is allowed
-        require(
-            manager.depositAllowed(address(this), sender, receiver, assets)
+        _deposit(
+            receiver,
+            assets,
+            (shares = assets.wadDiv(_unsafeExchangeRate()))
         );
-
-        // Get assets from {msg.sender}
-        IERC20Upgradeable(asset).safeTransferFrom(
-            sender,
-            address(this),
-            assets
-        );
-
-        // We placed the {accrue} modifier so we can use {_unsafeExchangeRate}
-        shares = assets.wadDiv(_unsafeExchangeRate());
-
-        _mint(receiver, shares);
-
-        emit Deposit(sender, receiver, assets, shares);
     }
 
     /**
@@ -336,27 +321,11 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         nonReentrant
         returns (uint256 assets)
     {
-        require(shares > 0);
-        address sender = _msgSender();
-
-        // We placed the {accrue} modifier so we can use {_unsafeExchangeRate}
-        assets = shares.wadMul(_unsafeExchangeRate());
-
-        // Make sure minting is allowed
-        require(
-            manager.depositAllowed(address(this), sender, receiver, assets)
+        _deposit(
+            receiver,
+            (assets = shares.wadMul(_unsafeExchangeRate())),
+            shares
         );
-
-        // Get assets from {msg.sender}
-        IERC20Upgradeable(asset).safeTransferFrom(
-            sender,
-            address(this),
-            assets
-        );
-
-        _mint(receiver, shares);
-
-        emit Deposit(sender, receiver, assets, shares);
     }
 
     function withdraw(
@@ -364,17 +333,12 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         address receiver,
         address owner
     ) external accrue nonReentrant returns (uint256 shares) {
-        require(assets > 0);
-
-        require(
-            manager.withdrawAllowed(address(this), owner, receiver, assets)
+        _withdraw(
+            receiver,
+            owner,
+            assets,
+            (shares = assets.wadDiv(_unsafeExchangeRate()))
         );
-        require(_getCash() >= assets);
-
-        // We placed the {accrue} modifier so we can use {_unsafeExchangeRate}
-        shares = assets.wadDiv(_unsafeExchangeRate());
-
-        _withdraw(owner, receiver, assets, shares);
     }
 
     function redeem(
@@ -382,17 +346,12 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         address receiver,
         address owner
     ) external accrue nonReentrant returns (uint256 assets) {
-        require(shares > 0);
-
-        // We placed the {accrue} modifier so we can use {_unsafeExchangeRate}
-        assets = shares.wadMul(_unsafeExchangeRate());
-
-        require(
-            manager.withdrawAllowed(address(this), owner, receiver, assets)
+        _withdraw(
+            receiver,
+            owner,
+            (assets = shares.wadMul(_unsafeExchangeRate())),
+            shares
         );
-        require(_getCash() >= assets);
-
-        _withdraw(owner, receiver, assets, shares);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -404,7 +363,8 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     }
 
     function _safeBorrowRatePerBlock() internal view returns (uint256 rate) {
-        require(BORROW_RATE_MAX_MANTISSA > (rate = borrowRatePerBlock()));
+        if ((rate = borrowRatePerBlock()) >= BORROW_RATE_MAX_MANTISSA)
+            revert InvalidBorrowRate();
     }
 
     function _blocksDelta() internal view returns (uint256) {
@@ -424,12 +384,44 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                 );
     }
 
-    function _withdraw(
-        address owner,
+    function _deposit(
         address receiver,
         uint256 assets,
         uint256 shares
     ) internal {
+        if (0 > shares || 0 > assets) revert ZeroAmountNotAllowed();
+
+        address sender = _msgSender();
+
+        // Make sure minting is allowed
+        if (!manager.depositAllowed(address(this), sender, receiver, assets))
+            revert DepositNotAllowed();
+
+        // Get assets from {msg.sender}
+        IERC20Upgradeable(asset).safeTransferFrom(
+            sender,
+            address(this),
+            assets
+        );
+
+        _mint(receiver, shares);
+
+        emit Deposit(sender, receiver, assets, shares);
+    }
+
+    function _withdraw(
+        address receiver,
+        address owner,
+        uint256 assets,
+        uint256 shares
+    ) internal {
+        if (0 > assets || 0 > shares) revert ZeroAmountNotAllowed();
+
+        if (!manager.withdrawAllowed(address(this), owner, receiver, assets))
+            revert WithdrawNotAllowed();
+
+        if (assets > _getCash()) revert NotEnoughCash();
+
         address sender = _msgSender();
 
         if (sender != owner) {

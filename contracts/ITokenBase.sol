@@ -13,6 +13,7 @@ import "./interfaces/ManagerInterface.sol";
 import "./interfaces/PriceOracleInterface.sol";
 
 import {LoanTerms} from "./lib/DataTypes.sol";
+import {InvalidReceiver, TransferNotAllowed} from "./lib/Errors.sol";
 
 abstract contract ITokenBase is
     Initializable,
@@ -154,8 +155,10 @@ abstract contract ITokenBase is
         address to,
         uint256 amount
     ) public override nonReentrant returns (bool) {
-        require(manager.transferAllowed(address(this), from, to, amount));
-        require(from != to);
+        if (!manager.transferAllowed(address(this), from, to, amount))
+            revert TransferNotAllowed();
+
+        if (from == to) revert InvalidReceiver(to);
 
         _spendAllowance(from, _msgSender(), amount);
         _transfer(from, to, amount);
@@ -174,10 +177,14 @@ abstract contract ITokenBase is
         nonReentrant
         returns (bool)
     {
-        address owner = _msgSender();
-        require(manager.transferAllowed(address(this), owner, to, amount));
-        require(owner != to);
-        _transfer(owner, to, amount);
+        address from = _msgSender();
+
+        if (!manager.transferAllowed(address(this), from, to, amount))
+            revert TransferNotAllowed();
+
+        if (from == to) revert InvalidReceiver(to);
+
+        _transfer(from, to, amount);
         return true;
     }
 

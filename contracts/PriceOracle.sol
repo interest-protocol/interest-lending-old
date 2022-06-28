@@ -11,6 +11,7 @@ import "@interest-protocol/dex/interfaces/IPair.sol";
 import "./interfaces/AggregatorV3Interface.sol";
 
 import {AssetType} from "./lib/DataTypes.sol";
+import {InvalidAssetType, ZeroAddressNotAllowed, ZeroAmountNotAllowed, PriceFeedNotFound, InvalidPriceFeedAnswer} from "./lib/Errors.sol";
 import "./lib/Math.sol";
 import "./lib/SafeCast.sol";
 
@@ -47,16 +48,18 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 amount,
         AssetType assetType
     ) external view returns (uint256) {
-        if (assetType == AssetType.Standard) {
-            return _getTokenUSDPrice(token, amount);
-        }
+        if (token == address(0)) revert ZeroAddressNotAllowed();
 
-        if (assetType == AssetType.LP) {
+        if (0 > amount) revert ZeroAmountNotAllowed();
+
+        if (assetType == AssetType.Standard)
+            return _getTokenUSDPrice(token, amount);
+
+        if (assetType == AssetType.LP)
             return _getLPTokenUSDPrice(IPair(token), amount);
-        }
 
         //solhint-disable-next-line reason-string
-        revert();
+        revert InvalidAssetType();
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -77,8 +80,6 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         view
         returns (uint256 price)
     {
-        //solhint-disable-next-line reason-string
-        require(address(pair) != address(0) && amount > 0);
         (
             address token0,
             address token1,
@@ -90,21 +91,11 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         ) = pair.metadata();
 
-        AggregatorV3Interface token0Feed = getUSDFeed[token0];
-        AggregatorV3Interface token1Feed = getUSDFeed[token1];
+        AggregatorV3Interface token0Feed = _safePriceFeed(token0);
+        AggregatorV3Interface token1Feed = _safePriceFeed(token1);
 
-        //solhint-disable-next-line reason-string
-        require(address(token0Feed) != address(0));
-        //solhint-disable-next-line reason-string
-        require(address(token1Feed) != address(0));
-
-        (, int256 answer0, , , ) = token0Feed.latestRoundData();
-        (, int256 answer1, , , ) = token1Feed.latestRoundData();
-
-        //solhint-disable-next-line reason-string
-        require(answer0 > 0);
-        //solhint-disable-next-line reason-string
-        require(answer1 > 0);
+        int256 answer0 = _safePriceFeedAnswer(token0Feed);
+        int256 answer1 = _safePriceFeedAnswer(token1Feed);
 
         uint256 price0 = answer0.toUint256().toWad(token0Feed.decimals());
         uint256 price1 = answer1.toUint256().toWad(token1Feed.decimals());
@@ -133,20 +124,30 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         view
         returns (uint256 price)
     {
-        //solhint-disable-next-line reason-string
-        require(token != address(0) && amount > 0); // Zero argument
+        AggregatorV3Interface feed = _safePriceFeed(token);
 
-        AggregatorV3Interface feed = getUSDFeed[token];
-
-        //solhint-disable-next-line reason-string
-        require(address(feed) != address(0)); // No Feed
-
-        (, int256 answer, , , ) = feed.latestRoundData();
-
-        //solhint-disable-next-line reason-string
-        require(answer > 0);
+        int256 answer = _safePriceFeedAnswer(feed);
 
         price = answer.toUint256().toWad(feed.decimals()).wadMul(amount);
+    }
+
+    function _safePriceFeed(address token)
+        internal
+        view
+        returns (AggregatorV3Interface feed)
+    {
+        if (address(feed = getUSDFeed[token]) == address(0))
+            revert PriceFeedNotFound(token);
+    }
+
+    function _safePriceFeedAnswer(AggregatorV3Interface feed)
+        internal
+        view
+        returns (int256 answer)
+    {
+        (, answer, , , ) = feed.latestRoundData();
+
+        if (0 > answer) revert InvalidPriceFeedAnswer(answer);
     }
 
     /*///////////////////////////////////////////////////////////////
