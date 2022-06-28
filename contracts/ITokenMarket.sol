@@ -240,7 +240,10 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
 
         rate = _totalSupply == 0
             ? _initialExchangeRateMantissa
-            : (_getCash() + newTotalBorrows - newTotalReserves).wadMul(
+            : _calculateExchangeRate(
+                _getCash(),
+                newTotalBorrows,
+                newTotalReserves,
                 _totalSupply
             );
     }
@@ -283,7 +286,10 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         (uint256 newTotalBorrows, uint256 newTotalReserves, ) = _accrueView();
 
         return
-            (_getCash() + newTotalBorrows - newTotalReserves).wadMul(
+            _calculateExchangeRate(
+                _getCash(),
+                newTotalBorrows,
+                newTotalReserves,
                 _totalSupply
             );
     }
@@ -358,6 +364,15 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                               Internal
     //////////////////////////////////////////////////////////////*/
 
+    function _calculateExchangeRate(
+        uint256 cash,
+        uint256 borrows,
+        uint256 reserves,
+        uint256 supply
+    ) internal pure returns (uint256) {
+        return (cash + borrows - reserves).wadMul(supply);
+    }
+
     function _getCash() internal view returns (uint256) {
         return IERC20Upgradeable(asset).balanceOf(address(this));
     }
@@ -379,7 +394,10 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         return
             _totalSupply == 0
                 ? _initialExchangeRateMantissa
-                : (_getCash() + _totalBorrows - _totalReserves).wadMul(
+                : _calculateExchangeRate(
+                    _getCash(),
+                    _totalBorrows,
+                    _totalReserves,
                     _totalSupply
                 );
     }
