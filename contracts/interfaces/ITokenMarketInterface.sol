@@ -1,7 +1,9 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.15;
 
-interface ITokenMarketInterface {
+import "./IERC4626.sol";
+
+interface ITokenMarketInterface is IERC4626 {
     event Accrue(
         uint256 totalBorrows,
         uint256 totalReserves,

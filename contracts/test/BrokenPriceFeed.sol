@@ -3,6 +3,8 @@ pragma solidity 0.8.15;
 
 //solhint-disable
 contract BrokenPriceFeed {
+    uint256 public constant decimals = 6;
+
     function latestRoundData()
         external
         view

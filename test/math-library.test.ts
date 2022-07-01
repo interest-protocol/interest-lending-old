@@ -1,20 +1,16 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { MathTest } from '../typechain';
+import { TestMath } from '../typechain';
 import { deploy, ONE_RAY, ONE_WAD, WAD_RAY_RATIO } from './utils';
 
 const { parseEther } = ethers.utils;
 
 describe('MathLib', function () {
-  let sut: MathTest;
+  let sut: TestMath;
 
   beforeEach(async () => {
-    sut = await deploy('MathTest', []);
-  });
-
-  it.only('gas test', async () => {
-    await sut.wadMul(parseEther('10'), parseEther('2.5'));
+    sut = await deploy('TestMath', []);
   });
 
   it('properly multiplies two WADs', async () => {
@@ -111,5 +107,18 @@ describe('MathLib', function () {
     expect(
       await sut.mulDiv(parseEther('182726'), parseEther('2918'), 10 ** 6)
     ).to.be.equal(parseEther('182726').mul(parseEther('2918')).div(1e6));
+  });
+
+  it('performs an unhecked multiplication', async () => {
+    expect(
+      await sut.uncheckedMul(parseEther('1826'), parseEther('182'))
+    ).to.be.equal(parseEther('1826').mul(parseEther('182')));
+
+    const overflowedValue = await sut.uncheckedMul(
+      ethers.constants.MaxUint256,
+      2
+    );
+
+    expect(overflowedValue.div(2)).to.be.not.equal(ethers.constants.MaxUint256);
   });
 });

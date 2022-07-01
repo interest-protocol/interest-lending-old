@@ -114,3 +114,9 @@ export const ETH_USD_FEED = ethers.utils.getAddress(
 export const BTC_USD_FEED = ethers.utils.getAddress(
   '0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c'
 );
+
+export enum AssetType {
+  LP,
+  InterestBearing,
+  Standard,
+}

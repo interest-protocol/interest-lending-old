@@ -2,26 +2,57 @@
 pragma solidity 0.8.15;
 
 import "@openzeppelin/contracts-upgradeable/interfaces/IERC20MetadataUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/draft-ERC20PermitUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 import "./interfaces/ITokenBaseInterface.sol";
 import "./interfaces/ManagerInterface.sol";
 
 import {LoanTerms} from "./lib/DataTypes.sol";
-import {InvalidReceiver, TransferNotAllowed, ZeroAddressNotAllowed} from "./lib/Errors.sol";
+import "./lib/Errors.sol";
 
-abstract contract ITokenBase is
+//solhint-disable var-name-mixedcase
+//solhint-disable max-states-count
+contract ITokenBase is
     Initializable,
-    ReentrancyGuardUpgradeable,
-    ERC20PermitUpgradeable,
     OwnableUpgradeable,
     UUPSUpgradeable,
     ITokenBaseInterface
 {
+    /*//////////////////////////////////////////////////////////////
+                              ERC20 METADATA
+    //////////////////////////////////////////////////////////////*/
+
+    string public name;
+    string public symbol;
+    //solhint-disable-next-line const-name-snakecase
+    uint8 public constant decimals = 8;
+
+    /*//////////////////////////////////////////////////////////////
+                              ERC20 State
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    /*//////////////////////////////////////////////////////////////
+                              EIP-2612 State
+    //////////////////////////////////////////////////////////////*/
+
+    bytes32 private constant _TYPE_HASH =
+        keccak256(
+            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+        );
+
+    bytes32 private _CACHED_DOMAIN_SEPARATOR;
+    uint256 private _CACHED_CHAIN_ID;
+    bytes32 private _HASHED_NAME;
+    bytes32 private _HASHED_VERSION;
+
+    mapping(address => uint256) public nonces;
+
     /*///////////////////////////////////////////////////////////////
                                 STATE
     //////////////////////////////////////////////////////////////*/
@@ -36,10 +67,6 @@ abstract contract ITokenBase is
      */
     ManagerInterface public manager;
 
-    /**
-     * @notice The asset held by this IToken.
-     */
-    address public asset;
     /**
      * @notice Block number that interest was last accrued at
      */
@@ -76,42 +103,139 @@ abstract contract ITokenBase is
         IERC20MetadataUpgradeable _asset,
         ManagerInterface _manager
     ) internal onlyInitializing {
-        // Sets the name to "IToken USD Coin"
+        // Sets the owner to the {msg.sender}
+        __Ownable_init();
+
         string memory _name = string(
             abi.encodePacked("IToken ", _asset.name())
         );
 
-        __ERC20Permit_init(_name);
-
-        // Sets the symbol to "iUSDC"
-        __ERC20_init(_name, string(abi.encodePacked("i", _asset.symbol())));
-
-        // Sets the owner to the {msg.sender}
-        __Ownable_init();
-
-        __ReentrancyGuard_init();
-
         // Global state
-        asset = address(_asset);
+        name = _name;
+        symbol = string(abi.encodePacked("i", _asset.symbol()));
+
         manager = _manager;
         accrualBlockNumber = block.number;
         _borrowIndex = 1 ether;
+
+        _HASHED_NAME = keccak256(bytes(_name));
+        _HASHED_VERSION = keccak256(bytes("1"));
+        _CACHED_CHAIN_ID = block.chainid;
+        _CACHED_DOMAIN_SEPARATOR = _computeDomainSeparator(
+            _TYPE_HASH,
+            _HASHED_NAME,
+            _HASHED_VERSION
+        );
     }
 
-    /*///////////////////////////////////////////////////////////////
-                            ERC20 VIEW FUNCTIONS
+    /*//////////////////////////////////////////////////////////////
+                        NonReentrancy Modifier
+    //////////////////////////////////////////////////////////////*/
+
+    // Basic nonreentrancy guard
+    uint256 private _status = 1;
+    modifier nonReentrant() {
+        if (_status != 1) revert Reentrancy();
+        _status = 2;
+        _;
+        _status = 1;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            EIP-2612 Logic
+    //////////////////////////////////////////////////////////////*/
+
+    ///@notice Returns the DOMAIN_SEPARATOR
+    //solhint-disable-next-line func-name-mixedcase
+    function DOMAIN_SEPARATOR() public view returns (bytes32) {
+        return
+            block.chainid == _CACHED_CHAIN_ID
+                ? _CACHED_DOMAIN_SEPARATOR
+                : _computeDomainSeparator(
+                    _TYPE_HASH,
+                    _HASHED_NAME,
+                    _HASHED_VERSION
+                );
+    }
+
+    ///@notice Makes a new DOMAIN_SEPARATOR if the chainid changes.
+    function _computeDomainSeparator(
+        bytes32 typeHash,
+        bytes32 nameHash,
+        bytes32 versionHash
+    ) private view returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    typeHash,
+                    nameHash,
+                    versionHash,
+                    block.chainid,
+                    address(this)
+                )
+            );
+    }
+
+    // standard permit function
+    function permit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        //solhint-disable-next-line not-rely-on-time
+        if (block.timestamp > deadline) revert PermitExpired();
+        unchecked {
+            bytes32 digest = keccak256(
+                abi.encodePacked(
+                    "\x19\x01",
+                    DOMAIN_SEPARATOR(),
+                    keccak256(
+                        abi.encode(
+                            keccak256(
+                                "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+                            ),
+                            owner,
+                            spender,
+                            value,
+                            nonces[owner]++,
+                            deadline
+                        )
+                    )
+                )
+            );
+
+            address recoveredAddress = ecrecover(digest, v, r, s);
+
+            if (recoveredAddress == address(0) || recoveredAddress != owner)
+                revert InvalidSignature();
+
+            allowance[owner][spender] = value;
+        }
+
+        emit Approval(owner, spender, value);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            ERC20 Logic
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice {ERC20} decimal function overriden to 8.
+     * @dev ERC20 standard approve.
+     *
+     * @param spender Address that will be allowed to spend in behalf o the `msg.sender`
+     * @param amount The number of tokens the `spender` can spend from the `msg.sender`
+     * @return bool true if successful
      */
-    function decimals() public pure override returns (uint8) {
-        return 8;
-    }
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
 
-    /*///////////////////////////////////////////////////////////////
-                              ERC20 IMPURE modified
-    //////////////////////////////////////////////////////////////*/
+        emit Approval(msg.sender, spender, amount);
+        return true;
+    }
 
     /**
      * @notice Standard {ERC20} {transferFrom} with additional checks.
@@ -123,14 +247,20 @@ abstract contract ITokenBase is
         address from,
         address to,
         uint256 amount
-    ) public override nonReentrant returns (bool) {
+    ) external nonReentrant returns (bool) {
         if (!manager.transferAllowed(address(this), from, to, amount))
             revert TransferNotAllowed();
 
-        if (from == to) revert InvalidReceiver(to);
+        _spendAllowance(from, msg.sender, amount);
 
-        _spendAllowance(from, _msgSender(), amount);
-        _transfer(from, to, amount);
+        balanceOf[from] -= amount;
+
+        unchecked {
+            balanceOf[to] += amount;
+        }
+
+        emit Transfer(from, to, amount);
+
         return true;
     }
 
@@ -141,8 +271,7 @@ abstract contract ITokenBase is
      * @dev The {nonReentrant} modifier is applied to prevent reentrancy attacks.
      */
     function transfer(address to, uint256 amount)
-        public
-        override
+        external
         nonReentrant
         returns (bool)
     {
@@ -151,9 +280,14 @@ abstract contract ITokenBase is
         if (!manager.transferAllowed(address(this), from, to, amount))
             revert TransferNotAllowed();
 
-        if (from == to) revert InvalidReceiver(to);
+        balanceOf[from] -= amount;
 
-        _transfer(from, to, amount);
+        unchecked {
+            balanceOf[to] += amount;
+        }
+
+        emit Transfer(from, to, amount);
+
         return true;
     }
 
@@ -165,6 +299,51 @@ abstract contract ITokenBase is
         unchecked {
             return block.number - accrualBlockNumber;
         }
+    }
+
+    /**
+     * @notice Updates `owner` s allowance for `spender` based on spent `amount`.
+     *
+     * Does not update the allowance amount in case of infinite allowance.
+     * Revert if not enough allowance is available.
+     *
+     * Might emit an {Approval} event.
+     */
+    function _spendAllowance(
+        address owner,
+        address spender,
+        uint256 amount
+    ) internal {
+        uint256 allowed = allowance[owner][spender]; // Saves gas for limited approvals.
+
+        if (allowed != type(uint256).max)
+            allowance[owner][spender] = allowed - amount;
+    }
+
+    /**
+     * @notice Creates new tokens for an account.
+     */
+    function _mint(address to, uint256 amount) internal {
+        totalSupply += amount;
+
+        unchecked {
+            balanceOf[to] += amount;
+        }
+
+        emit Transfer(address(0), to, amount);
+    }
+
+    /**
+     * @notice Deploys tokens from an account.
+     */
+    function _burn(address from, uint256 amount) internal {
+        balanceOf[from] -= amount;
+
+        unchecked {
+            totalSupply -= amount;
+        }
+
+        emit Transfer(from, address(0), amount);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -182,16 +361,5 @@ abstract contract ITokenBase is
     //solhint-disable-next-line no-empty-blocks
     {
 
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                             OWNER ONLY
-    //////////////////////////////////////////////////////////////*/
-
-    function updateManager(ManagerInterface _manager) external onlyOwner {
-        if (address(_manager) == address(0)) revert ZeroAddressNotAllowed();
-
-        emit NewManager(address(manager), address(_manager));
-        manager = _manager;
     }
 }

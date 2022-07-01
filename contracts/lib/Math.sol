@@ -264,15 +264,16 @@ library Math {
         }
     }
 
-    function unsafeMul(uint256 x, uint256 y) internal pure returns (uint256 z) {
+    /**
+     * @dev Multiplication without checking for overflows. Only to be used on calculations we are 100% certain, they cannot overflow.
+     */
+    function uncheckedMul(uint256 x, uint256 y)
+        internal
+        pure
+        returns (uint256 z)
+    {
         assembly {
             z := mul(x, y)
-        }
-    }
-
-    function unsafeSub(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        assembly {
-            z := sub(x, y)
         }
     }
 }

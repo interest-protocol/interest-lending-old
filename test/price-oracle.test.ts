@@ -10,6 +10,7 @@ import {
   TestFactory,
 } from '../typechain';
 import {
+  AssetType,
   BTC_USD_FEED,
   deploy,
   deployUUPS,
@@ -83,21 +84,51 @@ describe('PriceOracle', () => {
     });
   });
 
-  describe('function: getTokenUSDPrice', () => {
-    it('reverts if there is no feed or its the zero address', async () => {
-      await expect(oracle.getTokenUSDPrice(ethers.constants.AddressZero, 1)).to
-        .be.reverted;
+  describe('function: getAssetPrice', () => {
+    it('reverts if the argument if the amount is 0 or the address if address(0)', async () => {
+      await expect(
+        oracle.getAssetPrice(0, ethers.constants.AddressZero, 1)
+      ).to.revertedWith('ZeroAddressNotAllowed()');
 
-      await expect(oracle.getTokenUSDPrice(btc.address, 0)).to.be.reverted;
-      await expect(oracle.getTokenUSDPrice(alice.address, 1)).to.be.reverted;
+      await expect(oracle.getAssetPrice(0, btc.address, 0)).to.revertedWith(
+        'ZeroAmountNotAllowed()'
+      );
+    });
+
+    it('reverts if you pass an invalid assetType', async () => {
+      const random = Math.random();
+      await expect(
+        oracle.getAssetPrice(random >= 3 ? random : 3, btc.address, 111)
+      ).to.reverted;
+    });
+  });
+
+  describe('function: _getTokenUSDPrice', () => {
+    it('reverts if there is no feed or its the zero address', async () => {
+      await expect(
+        oracle.getAssetPrice(
+          AssetType.Standard,
+          ethers.constants.AddressZero,
+          1
+        )
+      ).to.be.reverted;
+
+      await expect(oracle.getAssetPrice(AssetType.Standard, btc.address, 0)).to
+        .be.reverted;
+      await expect(
+        oracle.getAssetPrice(AssetType.Standard, alice.address, 1)
+      ).to.be.revertedWith('PriceFeedNotFound(address)');
 
       await oracle.setUSDFeed(btc.address, brokenPriceFeed.address);
 
-      await expect(oracle.getTokenUSDPrice(alice.address, 1)).to.be.reverted;
+      await expect(
+        oracle.getAssetPrice(AssetType.Standard, btc.address, 1)
+      ).to.be.revertedWith('InvalidPriceFeedAnswer(int256)');
     });
 
     it('returns a price based on the amount with a scaling factor of 1/1e18', async () => {
-      const answer = await oracle.getTokenUSDPrice(
+      const answer = await oracle.getAssetPrice(
+        AssetType.Standard,
         btc.address,
         parseEther('1')
       );
@@ -105,25 +136,36 @@ describe('PriceOracle', () => {
       expect(answer).to.be.closeTo(APPROX_BTC_PRICE, parseEther('1'));
 
       expect(
-        await oracle.getTokenUSDPrice(btc.address, parseEther('2.7'))
+        await oracle.getAssetPrice(
+          AssetType.Standard,
+          btc.address,
+          parseEther('2.7')
+        )
       ).to.be.equal(answer.mul(parseEther('2.7')).div(parseEther('1')));
     });
   });
 
-  describe('function: getLPTokenUSDPrice', () => {
+  describe('function: _getLPTokenUSDPrice', () => {
     it('reverts if the arguments are invalid', async () => {
-      await expect(oracle.getLPTokenUSDPrice(ethers.constants.AddressZero, 1))
-        .to.reverted;
+      await expect(
+        oracle.getAssetPrice(AssetType.LP, ethers.constants.AddressZero, 1)
+      ).to.revertedWith('ZeroAddressNotAllowed()');
 
-      await expect(oracle.getLPTokenUSDPrice(btc.address, 0)).to.reverted;
+      await expect(
+        oracle.getAssetPrice(AssetType.LP, btc.address, 0)
+      ).to.revertedWith('ZeroAmountNotAllowed()');
     });
 
     it('reverts if one of the underlying tokens do not have a feed', async () => {
       await oracle.setUSDFeed(weth.address, ethers.constants.AddressZero);
 
       await expect(
-        oracle.getLPTokenUSDPrice(volatilePair.address, parseEther('1'))
-      ).to.reverted;
+        oracle.getAssetPrice(
+          AssetType.LP,
+          volatilePair.address,
+          parseEther('1')
+        )
+      ).to.be.revertedWith('PriceFeedNotFound(address)');
 
       await Promise.all([
         oracle.setUSDFeed(weth.address, ETH_USD_FEED),
@@ -131,16 +173,24 @@ describe('PriceOracle', () => {
       ]);
 
       await expect(
-        oracle.getLPTokenUSDPrice(volatilePair.address, parseEther('1'))
-      ).to.reverted;
+        oracle.getAssetPrice(
+          AssetType.LP,
+          volatilePair.address,
+          parseEther('1')
+        )
+      ).to.be.revertedWith('PriceFeedNotFound(address)');
     });
 
     it('reverts if any of price feeds returns zero', async () => {
       await oracle.setUSDFeed(weth.address, brokenPriceFeed.address);
 
       await expect(
-        oracle.getLPTokenUSDPrice(volatilePair.address, parseEther('1'))
-      ).to.reverted;
+        oracle.getAssetPrice(
+          AssetType.LP,
+          volatilePair.address,
+          parseEther('1')
+        )
+      ).to.be.revertedWith('InvalidPriceFeedAnswer(int256)');
 
       await Promise.all([
         oracle.setUSDFeed(weth.address, ETH_USD_FEED),
@@ -148,8 +198,12 @@ describe('PriceOracle', () => {
       ]);
 
       await expect(
-        oracle.getLPTokenUSDPrice(volatilePair.address, parseEther('1'))
-      ).to.reverted;
+        oracle.getAssetPrice(
+          AssetType.LP,
+          volatilePair.address,
+          parseEther('1')
+        )
+      ).to.be.revertedWith('InvalidPriceFeedAnswer(int256)');
     });
 
     it('calculates the fair price of a LP token', async () => {
@@ -177,7 +231,11 @@ describe('PriceOracle', () => {
         .div(parseEther('1'));
 
       expect(
-        await oracle.getLPTokenUSDPrice(volatilePair.address, parseEther('10'))
+        await oracle.getAssetPrice(
+          AssetType.LP,
+          volatilePair.address,
+          parseEther('10')
+        )
       ).to.be.closeTo(btcUSD.add(ethUSD), parseEther('5')); // 5 dollar approx
 
       // @notice someone tried to trick the oracles by doubling the weth reserves
@@ -189,7 +247,11 @@ describe('PriceOracle', () => {
 
       // @notice price remains unchanged due to Chainlink oracles
       expect(
-        await oracle.getLPTokenUSDPrice(volatilePair.address, parseEther('10'))
+        await oracle.getAssetPrice(
+          AssetType.LP,
+          volatilePair.address,
+          parseEther('10')
+        )
       ).to.be.closeTo(btcUSD.add(ethUSD), parseEther('5')); // 5 dollar approx
     });
   });

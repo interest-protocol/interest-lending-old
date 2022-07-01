@@ -14,6 +14,9 @@ import "./lib/Math.sol";
 
 import "./ITokenBase.sol";
 
+/**
+ * @notice The term assets refers to the underlying token stored in this contract. The term shares refers to the token of this contract itself that is used to keep track of how many assets a user owns.
+ */
 contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     /*///////////////////////////////////////////////////////////////
                               LIBS
@@ -25,6 +28,11 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     /*///////////////////////////////////////////////////////////////
                               STATE
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice The asset held by this IToken.
+     */
+    address public asset;
 
     /**
      * @notice Contract that calculates the interest rate for borrowing and lending.
@@ -171,7 +179,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         view
         returns (uint256 maxAssets)
     {
-        maxAssets = convertToAssets(balanceOf(owner)).min(_getCash());
+        maxAssets = convertToAssets(balanceOf[owner]).min(_getCash());
     }
 
     /// @notice Allows an on-chain or off-chain user to simulate
@@ -193,7 +201,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         view
         returns (uint256 maxShares)
     {
-        maxShares = balanceOf(owner).min(convertToShares(_getCash()));
+        maxShares = balanceOf[owner].min(convertToShares(_getCash()));
     }
 
     /// @notice Allows an on-chain or off-chain user to simulate
@@ -255,7 +263,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         )
     {
         uint256 supply = _totalSupply();
-        iTokenBalance = balanceOf(account);
+        iTokenBalance = balanceOf[account];
 
         (
             uint256 newTotalBorrows,
@@ -263,20 +271,17 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             uint256 newBorrowIndex
         ) = _accrueView();
 
-        LoanTerms memory terms = _loanTermsOf[account];
+        borrowBalance = _calculateBorrowBalanceOf(
+            _loanTermsOf[account],
+            newBorrowIndex
+        );
 
-        borrowBalance = terms.principal == 0
-            ? 0
-            : _calculateBorrowBalanceOf(_loanTermsOf[account], newBorrowIndex);
-
-        rate = supply == 0
-            ? _initialExchangeRateMantissa
-            : _calculateExchangeRate(
-                _getCash(),
-                newTotalBorrows,
-                newTotalReserves,
-                supply
-            );
+        rate = _calculateExchangeRate(
+            _getCash(),
+            newTotalBorrows,
+            newTotalReserves,
+            supply
+        );
     }
 
     /**
@@ -307,9 +312,6 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      * @notice It returns the current exchange rate
      */
     function exchangeRate() public view returns (uint256) {
-        uint256 supply = _totalSupply();
-        if (supply == 0) return _initialExchangeRateMantissa;
-
         (uint256 newTotalBorrows, uint256 newTotalReserves, ) = _accrueView();
 
         return
@@ -317,14 +319,20 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                 _getCash(),
                 newTotalBorrows,
                 newTotalReserves,
-                supply
+                _totalSupply()
             );
     }
 
+    /**
+     *@notice Updates the loan data of this market.
+     */
     function accrueMarket() external {
         _accrue();
     }
 
+    /**
+     * @notice Returns how many {asset} can be borrowed
+     */
     function getCash() external view returns (uint256) {
         return _getCash();
     }
@@ -347,7 +355,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         _deposit(
             receiver,
             assets,
-            (shares = assets.wadDiv(_unsafeExchangeRate()))
+            (shares = assets.wadDiv(_currentExchangeRate()))
         );
     }
 
@@ -364,7 +372,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     {
         _deposit(
             receiver,
-            (assets = shares.wadMul(_unsafeExchangeRate())),
+            (assets = shares.wadMul(_currentExchangeRate())),
             shares
         );
     }
@@ -378,7 +386,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             receiver,
             owner,
             assets,
-            (shares = assets.wadDiv(_unsafeExchangeRate()))
+            (shares = assets.wadDiv(_currentExchangeRate()))
         );
     }
 
@@ -390,7 +398,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         _withdraw(
             receiver,
             owner,
-            (assets = shares.wadMul(_unsafeExchangeRate())),
+            (assets = shares.wadMul(_currentExchangeRate())),
             shares
         );
     }
@@ -499,18 +507,28 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         _seize(_msgSender(), liquidator, borrower, assets);
     }
 
+    /**
+     * @notice It allows anyone to donate reserves to the protocol.
+     */
+    function addReserves(uint256 amount) external accrue {
+        if (amount == 0) revert ZeroAmountNotAllowed();
+
+        address sender = _msgSender();
+
+        IERC20Upgradeable(asset).safeTransferFrom(
+            sender,
+            address(this),
+            amount
+        );
+
+        _totalReserves += amount;
+
+        emit AddReserves(sender, amount, _totalReserves);
+    }
+
     /*///////////////////////////////////////////////////////////////
                               Internal
     //////////////////////////////////////////////////////////////*/
-
-    function _calculateExchangeRate(
-        uint256 cash,
-        uint256 borrows,
-        uint256 reserves,
-        uint256 supply
-    ) internal pure returns (uint256) {
-        return (cash + borrows - reserves).wadMul(supply);
-    }
 
     function _calculateBorrowBalanceOf(
         LoanTerms memory terms,
@@ -522,9 +540,21 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                 : (terms.principal * borrowIndex) / terms.index;
     }
 
+    function _calculateExchangeRate(
+        uint256 cash,
+        uint256 borrows,
+        uint256 reserves,
+        uint256 supply
+    ) internal view returns (uint256) {
+        return
+            supply == 0
+                ? _initialExchangeRateMantissa
+                : (cash + borrows - reserves).wadMul(supply);
+    }
+
     function _totalSupply() internal view returns (uint256) {
         unchecked {
-            return totalSupply() - _totalReservesShares;
+            return totalSupply - _totalReservesShares;
         }
     }
 
@@ -537,18 +567,14 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             revert InvalidBorrowRate();
     }
 
-    function _unsafeExchangeRate() internal view returns (uint256) {
-        uint256 supply = _totalSupply();
-
+    function _currentExchangeRate() internal view returns (uint256) {
         return
-            supply == 0
-                ? _initialExchangeRateMantissa
-                : _calculateExchangeRate(
-                    _getCash(),
-                    _totalBorrows,
-                    _totalReserves,
-                    supply
-                );
+            _calculateExchangeRate(
+                _getCash(),
+                _totalBorrows,
+                _totalReserves,
+                _totalSupply()
+            );
     }
 
     function _deposit(
@@ -693,7 +719,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
             _borrowIndex
         );
 
-        uint256 interest = blocksDelta.unsafeMul(_safeBorrowRatePerBlock());
+        uint256 interest = blocksDelta.uncheckedMul(_safeBorrowRatePerBlock());
 
         uint256 interestAccumulated = interest.wadMul(prevTotalborrow);
 
@@ -749,36 +775,36 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                              OWNER ONLY
     //////////////////////////////////////////////////////////////*/
 
-    function updateReserveFactor(uint256 factor) external onlyOwner {
+    /**
+     * @notice It updates the manager of this contract.
+     */
+    function updateManager(ManagerInterface _manager)
+        external
+        accrue
+        onlyOwner
+    {
+        if (address(_manager) == address(0)) revert ZeroAddressNotAllowed();
+
+        emit NewManager(address(manager), address(_manager));
+        manager = _manager;
+    }
+
+    /**
+     *@notice It updates the % of the borrow rate that is kept by the protocol.
+     */
+    function updateReserveFactor(uint256 factor) external accrue onlyOwner {
         if (factor >= RESERVE_FACTOR_MAX_MANTISSA)
             revert ReserveFactorOutOfBounds();
-
-        _accrue();
 
         emit NewReserveFactor(reserveFactorMantissa, factor);
 
         reserveFactorMantissa = factor;
     }
 
-    function addReserves(uint256 amount) external onlyOwner {
-        if (amount == 0) revert ZeroAmountNotAllowed();
-
-        _accrue();
-
-        address sender = _msgSender();
-
-        IERC20Upgradeable(asset).safeTransferFrom(
-            sender,
-            address(this),
-            amount
-        );
-
-        _totalReserves += amount;
-
-        emit AddReserves(sender, amount, _totalReserves);
-    }
-
-    function removeReserves(uint256 amount) external onlyOwner {
+    /**
+     *@notice It allows the {owner} to remove reserves from the protocol.
+     */
+    function removeReserves(uint256 amount) external accrue onlyOwner {
         if (amount == 0) revert ZeroAmountNotAllowed();
 
         if (amount > _getCash()) revert NotEnoughCash();
@@ -787,9 +813,8 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
 
         if (amount > reserves) revert NotEnoughReserves();
 
-        _accrue();
-
         reserves -= amount;
+
         _totalReserves = reserves;
 
         address sender = _msgSender();

@@ -100,14 +100,13 @@ contract InterestRateModel is Ownable {
         uint256 reserves,
         uint256 reserveFactor
     ) external view returns (uint256) {
-        uint256 investorsFactor = 1 ether - reserveFactor;
-        uint256 borrowRate = _getBorrowRatePerBlock(
+        uint256 borrowRateToInvestors = _getBorrowRatePerBlock(
             token,
             cash,
             totalBorrowAmount,
             reserves
-        );
-        uint256 borrowRateToInvestors = borrowRate.wadMul(investorsFactor);
+        ).wadMul(1 ether - reserveFactor);
+
         return
             _getUtilizationRate(cash, totalBorrowAmount, reserves).wadMul(
                 borrowRateToInvestors

@@ -2,8 +2,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { InterestRateModel } from '../typechain';
-import { deploy, USDC_ADDRESS } from './utils';
+import { InterestRateModel, TestMarket } from '../typechain';
+import { multiDeploy } from './utils';
 
 const { parseEther } = ethers.utils;
 
@@ -19,18 +19,19 @@ const KINK = parseEther('0.7');
 
 describe('Interest Rate Model', () => {
   let sut: InterestRateModel;
+  let testMarket: TestMarket;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
 
   beforeEach(async () => {
-    [[owner, alice], sut] = await Promise.all([
+    [[owner, alice], [sut, testMarket]] = await Promise.all([
       ethers.getSigners(),
-      deploy('InterestRateModel', [BLOCKS_PER_YEAR]),
+      multiDeploy(['InterestRateModel', 'TestMarket'], [[BLOCKS_PER_YEAR], []]),
     ]);
 
     await sut.setInterestRateVars(
-      USDC_ADDRESS,
+      testMarket.address,
       BASE_RATE_PER_YEAR,
       MULTIPLIER_PER_YEAR,
       JUMP_MULTIPLIER_PER_YEAR,
@@ -51,26 +52,26 @@ describe('Interest Rate Model', () => {
   it('returns the borrow rate per block', async () => {
     const [result, result2, result3, variables] = await Promise.all([
       sut.getBorrowRatePerBlock(
-        USDC_ADDRESS,
+        testMarket.address,
         parseEther('1000000'),
         0,
         parseEther('100000')
       ),
       // Will trigger the kink - 80% utilization rate
       sut.getBorrowRatePerBlock(
-        USDC_ADDRESS,
+        testMarket.address,
         parseEther('350000'),
         parseEther('600000'),
         parseEther('200000')
       ),
       // Will NOT trigger the kink - 60% utilization rate
       sut.getBorrowRatePerBlock(
-        USDC_ADDRESS,
+        testMarket.address,
         parseEther('600000'),
         parseEther('600000'),
         parseEther('200000')
       ),
-      sut.getInterestRateVars(USDC_ADDRESS),
+      sut.getInterestRateVars(testMarket.address),
     ]);
 
     expect(result).to.be.equal(variables.baseRatePerBlock);
@@ -97,20 +98,20 @@ describe('Interest Rate Model', () => {
   it('returns the supply rate per block', async () => {
     const [result, result2, variables] = await Promise.all([
       sut.getSupplyRatePerBlock(
-        USDC_ADDRESS,
+        testMarket.address,
         parseEther('1000000'),
         0,
         parseEther('100000'),
         parseEther('0.2')
       ),
       sut.getSupplyRatePerBlock(
-        USDC_ADDRESS,
+        testMarket.address,
         parseEther('350000'),
         parseEther('600000'),
         parseEther('200000'),
         parseEther('0.3')
       ),
-      sut.getInterestRateVars(USDC_ADDRESS),
+      sut.getInterestRateVars(testMarket.address),
     ]);
 
     // 1 - reserveFactor
@@ -140,7 +141,7 @@ describe('Interest Rate Model', () => {
   describe('function: setInterestRateVars', () => {
     it('reverts if it is called by any account other than the owner', async () => {
       await expect(
-        sut.connect(alice).setInterestRateVars(USDC_ADDRESS, 0, 0, 0, 0)
+        sut.connect(alice).setInterestRateVars(testMarket.address, 0, 0, 0, 0)
       ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('updates the global variables of the interest rate model', async () => {
@@ -148,7 +149,7 @@ describe('Interest Rate Model', () => {
         sut
           .connect(owner)
           .setInterestRateVars(
-            USDC_ADDRESS,
+            testMarket.address,
             parseEther('0.03'),
             parseEther('0.2'),
             parseEther('0.3'),
@@ -157,12 +158,13 @@ describe('Interest Rate Model', () => {
       )
         .to.emit(sut, 'NewInterestRateVars')
         .withArgs(
-          USDC_ADDRESS,
+          testMarket.address,
           parseEther('0.03').div(BLOCKS_PER_YEAR),
           parseEther('0.2').div(BLOCKS_PER_YEAR),
           parseEther('0.3').div(BLOCKS_PER_YEAR),
           parseEther('0.5')
-        );
+        )
+        .to.emit(testMarket, 'Accrue');
     });
   });
 });

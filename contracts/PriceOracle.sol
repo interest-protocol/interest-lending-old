@@ -14,6 +14,7 @@ import {AssetType} from "./lib/DataTypes.sol";
 import {InvalidAssetType, ZeroAddressNotAllowed, ZeroAmountNotAllowed, PriceFeedNotFound, InvalidPriceFeedAnswer} from "./lib/Errors.sol";
 import "./lib/Math.sol";
 import "./lib/SafeCast.sol";
+import "hardhat/console.sol";
 
 contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
@@ -43,14 +44,24 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @notice It returns the USD price of a `token` for an `amount` with a scalar of 18.
+     *
+     * @param assetType It can be Normal ERC20 or Liquidity Provider Token.
+     * @param token The address of the token
+     * @param amount The number of tokens
+     * @return uint256 The price
+     *
+     * @dev The function will revert if Chainlink returns a 0 value or the `assetType` is invalid.
+     */
     function getAssetPrice(
+        AssetType assetType,
         address token,
-        uint256 amount,
-        AssetType assetType
+        uint256 amount
     ) external view returns (uint256) {
         if (token == address(0)) revert ZeroAddressNotAllowed();
 
-        if (0 != amount) revert ZeroAmountNotAllowed();
+        if (0 == amount) revert ZeroAmountNotAllowed();
 
         if (assetType == AssetType.Standard)
             return _getTokenUSDPrice(token, amount);
@@ -94,11 +105,13 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         AggregatorV3Interface token0Feed = _safePriceFeed(token0);
         AggregatorV3Interface token1Feed = _safePriceFeed(token1);
 
-        int256 answer0 = _safePriceFeedAnswer(token0Feed);
-        int256 answer1 = _safePriceFeedAnswer(token1Feed);
+        uint256 price0 = _safePriceFeedAnswer(token0Feed).toUint256().toWad(
+            token0Feed.decimals()
+        );
 
-        uint256 price0 = answer0.toUint256().toWad(token0Feed.decimals());
-        uint256 price1 = answer1.toUint256().toWad(token1Feed.decimals());
+        uint256 price1 = _safePriceFeedAnswer(token1Feed).toUint256().toWad(
+            token1Feed.decimals()
+        );
 
         /// @dev If total supply is zero it should throw and revert
         // Get square root of K
@@ -126,9 +139,10 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     {
         AggregatorV3Interface feed = _safePriceFeed(token);
 
-        int256 answer = _safePriceFeedAnswer(feed);
-
-        price = answer.toUint256().toWad(feed.decimals()).wadMul(amount);
+        price = _safePriceFeedAnswer(feed)
+            .toUint256()
+            .toWad(feed.decimals())
+            .wadMul(amount);
     }
 
     function _safePriceFeed(address token)
@@ -147,7 +161,7 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     {
         (, answer, , , ) = feed.latestRoundData();
 
-        if (0 > answer) revert InvalidPriceFeedAnswer(answer);
+        if (answer <= 0) revert InvalidPriceFeedAnswer(answer);
     }
 
     /*///////////////////////////////////////////////////////////////

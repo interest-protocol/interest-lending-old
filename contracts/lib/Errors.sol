@@ -38,3 +38,9 @@ error ReserveFactorOutOfBounds();
 error NotAuthorized();
 
 error NotEnoughReserves();
+
+error PermitExpired();
+
+error InvalidSignature();
+
+error Reentrancy();

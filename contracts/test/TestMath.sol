@@ -3,7 +3,7 @@ pragma solidity 0.8.15;
 
 import "../lib/Math.sol";
 
-contract MathTest {
+contract TestMath {
     using Math for uint256;
 
     function wadMul(uint256 x, uint256 y) external pure returns (uint256) {
@@ -68,5 +68,13 @@ contract MathTest {
 
     function sqrt(uint256 x) external pure returns (uint256) {
         return x.sqrt();
+    }
+
+    function uncheckedMul(uint256 x, uint256 y)
+        external
+        pure
+        returns (uint256)
+    {
+        return x.uncheckedMul(y);
     }
 }
