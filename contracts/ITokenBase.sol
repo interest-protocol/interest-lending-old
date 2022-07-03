@@ -6,11 +6,12 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
+import "./errors/ITokenBaseErrors.sol";
+
 import "./interfaces/ITokenBaseInterface.sol";
 import "./interfaces/ManagerInterface.sol";
 
 import {LoanTerms} from "./lib/DataTypes.sol";
-import "./lib/Errors.sol";
 
 //solhint-disable var-name-mixedcase
 //solhint-disable max-states-count
@@ -106,9 +107,7 @@ contract ITokenBase is
         // Sets the owner to the {msg.sender}
         __Ownable_init();
 
-        string memory _name = string(
-            abi.encodePacked("IToken ", _asset.name())
-        );
+        string memory _name = string(abi.encodePacked("I", _asset.name()));
 
         // Global state
         name = _name;
@@ -116,7 +115,9 @@ contract ITokenBase is
 
         manager = _manager;
         accrualBlockNumber = block.number;
+
         _borrowIndex = 1 ether;
+        _status = 1;
 
         _HASHED_NAME = keccak256(bytes(_name));
         _HASHED_VERSION = keccak256(bytes("1"));
@@ -133,9 +134,9 @@ contract ITokenBase is
     //////////////////////////////////////////////////////////////*/
 
     // Basic nonreentrancy guard
-    uint256 private _status = 1;
+    uint256 private _status;
     modifier nonReentrant() {
-        if (_status != 1) revert Reentrancy();
+        if (_status != 1) revert ITokenBase__Reentrancy();
         _status = 2;
         _;
         _status = 1;
@@ -187,7 +188,7 @@ contract ITokenBase is
         bytes32 s
     ) external {
         //solhint-disable-next-line not-rely-on-time
-        if (block.timestamp > deadline) revert PermitExpired();
+        if (block.timestamp > deadline) revert ITokenBase__PermitExpired();
         unchecked {
             bytes32 digest = keccak256(
                 abi.encodePacked(
@@ -211,7 +212,7 @@ contract ITokenBase is
             address recoveredAddress = ecrecover(digest, v, r, s);
 
             if (recoveredAddress == address(0) || recoveredAddress != owner)
-                revert InvalidSignature();
+                revert ITokenBase__InvalidSignature();
 
             allowance[owner][spender] = value;
         }
@@ -249,7 +250,7 @@ contract ITokenBase is
         uint256 amount
     ) external nonReentrant returns (bool) {
         if (!manager.transferAllowed(address(this), from, to, amount))
-            revert TransferNotAllowed();
+            revert ITokenBase__TransferNotAllowed();
 
         _spendAllowance(from, msg.sender, amount);
 
@@ -278,7 +279,7 @@ contract ITokenBase is
         address from = _msgSender();
 
         if (!manager.transferAllowed(address(this), from, to, amount))
-            revert TransferNotAllowed();
+            revert ITokenBase__TransferNotAllowed();
 
         balanceOf[from] -= amount;
 

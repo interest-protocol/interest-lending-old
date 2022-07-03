@@ -8,10 +8,11 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20Metadat
 
 import "@interest-protocol/dex/interfaces/IPair.sol";
 
+import "./errors/InterestRateModelErrors.sol";
+
 import "./interfaces/AggregatorV3Interface.sol";
 
 import {AssetType} from "./lib/DataTypes.sol";
-import {InvalidAssetType, ZeroAddressNotAllowed, ZeroAmountNotAllowed, PriceFeedNotFound, InvalidPriceFeedAnswer} from "./lib/Errors.sol";
 import "./lib/Math.sol";
 import "./lib/SafeCast.sol";
 import "hardhat/console.sol";
@@ -59,9 +60,9 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address token,
         uint256 amount
     ) external view returns (uint256) {
-        if (token == address(0)) revert ZeroAddressNotAllowed();
+        if (token == address(0)) revert PriceOracle__ZeroAddressNotAllowed();
 
-        if (0 == amount) revert ZeroAmountNotAllowed();
+        if (0 == amount) revert PriceOracle__ZeroAmountNotAllowed();
 
         if (assetType == AssetType.Standard)
             return _getTokenUSDPrice(token, amount);
@@ -70,7 +71,7 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             return _getLPTokenUSDPrice(IPair(token), amount);
 
         //solhint-disable-next-line reason-string
-        revert InvalidAssetType();
+        revert PriceOracle__InvalidAssetType();
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -151,7 +152,7 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         returns (AggregatorV3Interface feed)
     {
         if (address(feed = getUSDFeed[token]) == address(0))
-            revert PriceFeedNotFound(token);
+            revert PriceOracle__PriceFeedNotFound(token);
     }
 
     function _safePriceFeedAnswer(AggregatorV3Interface feed)
@@ -161,7 +162,7 @@ contract PriceOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     {
         (, answer, , , ) = feed.latestRoundData();
 
-        if (answer <= 0) revert InvalidPriceFeedAnswer(answer);
+        if (answer <= 0) revert PriceOracle__InvalidPriceFeedAnswer(answer);
     }
 
     /*///////////////////////////////////////////////////////////////

@@ -5,11 +5,12 @@ import "@openzeppelin/contracts-upgradeable/interfaces/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
+import "./errors/ITokenMarketErrors.sol";
+
 import "./interfaces/InterestRateModelInterface.sol";
 import "./interfaces/ITokenMarketInterface.sol";
 import "./interfaces/ManagerInterface.sol";
 
-import "./lib/Errors.sol";
 import "./lib/Math.sol";
 
 import "./ITokenBase.sol";
@@ -74,7 +75,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      * @notice It initializes the parent contract {ITokenBase}. Tt also sets the interest rate model.
      */
     //solhint-disable-next-line func-name-mixedcase
-    function __ITokenMarket_ini(
+    function initialize(
         IERC20MetadataUpgradeable _asset,
         ManagerInterface _manager,
         InterestRateModelInterface _interestRateModel
@@ -408,14 +409,14 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         accrue
         nonReentrant
     {
-        if (0 == assets) revert ZeroAmountNotAllowed();
+        if (0 == assets) revert ITokenMarket__ZeroAmountNotAllowed();
 
-        if (assets > _getCash()) revert NotEnoughCash();
+        if (assets > _getCash()) revert ITokenMarket__NotEnoughCash();
 
         address sender = _msgSender();
 
         if (!manager.borrowAllowed(address(this), sender, receiver, assets))
-            revert BorrowNotAllowed();
+            revert ITokenMarket__BorrowNotAllowed();
 
         LoanTerms memory terms = _loanTermsOf[sender];
 
@@ -452,7 +453,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     ) external accrue nonReentrant {
         address liquidator = _msgSender();
 
-        if (liquidator == borrower) revert InvalidLiquidator();
+        if (liquidator == borrower) revert ITokenMarket__InvalidLiquidator();
 
         if (
             !manager.liquidateAllowed(
@@ -462,7 +463,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                 borrower,
                 assets
             )
-        ) revert LiquidateNotAllowed();
+        ) revert ITokenMarket__LiquidateNotAllowed();
 
         bool sameMarket = collateralMarket == this;
 
@@ -511,7 +512,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      * @notice It allows anyone to donate reserves to the protocol.
      */
     function addReserves(uint256 amount) external accrue {
-        if (amount == 0) revert ZeroAmountNotAllowed();
+        if (amount == 0) revert ITokenMarket__ZeroAmountNotAllowed();
 
         address sender = _msgSender();
 
@@ -564,7 +565,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
 
     function _safeBorrowRatePerBlock() internal view returns (uint256 rate) {
         if ((rate = borrowRatePerBlock()) >= BORROW_RATE_MAX_MANTISSA)
-            revert InvalidBorrowRate();
+            revert ITokenMarket__InvalidBorrowRate();
     }
 
     function _currentExchangeRate() internal view returns (uint256) {
@@ -582,13 +583,14 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         uint256 assets,
         uint256 shares
     ) internal {
-        if (0 != shares || 0 != assets) revert ZeroAmountNotAllowed();
+        if (0 != shares || 0 != assets)
+            revert ITokenMarket__ZeroAmountNotAllowed();
 
         address sender = _msgSender();
 
         // Make sure minting is allowed
         if (!manager.depositAllowed(address(this), sender, receiver, assets))
-            revert DepositNotAllowed();
+            revert ITokenMarket__DepositNotAllowed();
 
         // Get assets from {msg.sender}
         IERC20Upgradeable(asset).safeTransferFrom(
@@ -608,12 +610,13 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         uint256 assets,
         uint256 shares
     ) internal {
-        if (0 != assets || 0 != shares) revert ZeroAmountNotAllowed();
+        if (0 != assets || 0 != shares)
+            revert ITokenMarket__ZeroAmountNotAllowed();
 
         if (!manager.withdrawAllowed(address(this), owner, receiver, assets))
-            revert WithdrawNotAllowed();
+            revert ITokenMarket__WithdrawNotAllowed();
 
-        if (assets > _getCash()) revert NotEnoughCash();
+        if (assets > _getCash()) revert ITokenMarket__NotEnoughCash();
 
         address sender = _msgSender();
 
@@ -633,10 +636,10 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         address borrower,
         uint256 assets
     ) internal returns (uint256 safeRepayAmount) {
-        if (0 == assets) revert ZeroAmountNotAllowed();
+        if (0 == assets) revert ITokenMarket__ZeroAmountNotAllowed();
 
         if (!manager.repayAllowed(address(this), sender, borrower, assets))
-            revert RepayNotAllowed();
+            revert ITokenMarket__RepayNotAllowed();
 
         LoanTerms memory terms = _loanTermsOf[borrower];
 
@@ -676,7 +679,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
                 borrower,
                 assets
             )
-        ) revert SeizeNotAllowed();
+        ) revert ITokenMarket__SeizeNotAllowed();
 
         uint256 protocolAmount = assets.wadMul(PROTOCOL_SEIZE_SHARE_MANTISSA);
         uint256 liquidatorAmount = assets - protocolAmount;
@@ -783,7 +786,8 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         accrue
         onlyOwner
     {
-        if (address(_manager) == address(0)) revert ZeroAddressNotAllowed();
+        if (address(_manager) == address(0))
+            revert ITokenMarket__ZeroAddressNotAllowed();
 
         emit NewManager(address(manager), address(_manager));
         manager = _manager;
@@ -794,7 +798,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      */
     function updateReserveFactor(uint256 factor) external accrue onlyOwner {
         if (factor >= RESERVE_FACTOR_MAX_MANTISSA)
-            revert ReserveFactorOutOfBounds();
+            revert ITokenMarket__ReserveFactorOutOfBounds();
 
         emit NewReserveFactor(reserveFactorMantissa, factor);
 
@@ -805,13 +809,13 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      *@notice It allows the {owner} to remove reserves from the protocol.
      */
     function removeReserves(uint256 amount) external accrue onlyOwner {
-        if (amount == 0) revert ZeroAmountNotAllowed();
+        if (amount == 0) revert ITokenMarket__ZeroAmountNotAllowed();
 
-        if (amount > _getCash()) revert NotEnoughCash();
+        if (amount > _getCash()) revert ITokenMarket__NotEnoughCash();
 
         uint256 reserves = _totalReserves;
 
-        if (amount > reserves) revert NotEnoughReserves();
+        if (amount > reserves) revert ITokenMarket__NotEnoughReserves();
 
         reserves -= amount;
 

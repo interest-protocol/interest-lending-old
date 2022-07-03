@@ -88,10 +88,10 @@ describe('PriceOracle', () => {
     it('reverts if the argument if the amount is 0 or the address if address(0)', async () => {
       await expect(
         oracle.getAssetPrice(0, ethers.constants.AddressZero, 1)
-      ).to.revertedWith('ZeroAddressNotAllowed()');
+      ).to.revertedWith('PriceOracle__ZeroAddressNotAllowed()');
 
       await expect(oracle.getAssetPrice(0, btc.address, 0)).to.revertedWith(
-        'ZeroAmountNotAllowed()'
+        'PriceOracle__ZeroAmountNotAllowed()'
       );
     });
 
@@ -117,13 +117,13 @@ describe('PriceOracle', () => {
         .be.reverted;
       await expect(
         oracle.getAssetPrice(AssetType.Standard, alice.address, 1)
-      ).to.be.revertedWith('PriceFeedNotFound(address)');
+      ).to.be.revertedWith('PriceOracle__PriceFeedNotFound(address)');
 
       await oracle.setUSDFeed(btc.address, brokenPriceFeed.address);
 
       await expect(
         oracle.getAssetPrice(AssetType.Standard, btc.address, 1)
-      ).to.be.revertedWith('InvalidPriceFeedAnswer(int256)');
+      ).to.be.revertedWith('PriceOracle__InvalidPriceFeedAnswer(int256)');
     });
 
     it('returns a price based on the amount with a scaling factor of 1/1e18', async () => {
@@ -149,11 +149,11 @@ describe('PriceOracle', () => {
     it('reverts if the arguments are invalid', async () => {
       await expect(
         oracle.getAssetPrice(AssetType.LP, ethers.constants.AddressZero, 1)
-      ).to.revertedWith('ZeroAddressNotAllowed()');
+      ).to.revertedWith('PriceOracle__ZeroAddressNotAllowed()');
 
       await expect(
         oracle.getAssetPrice(AssetType.LP, btc.address, 0)
-      ).to.revertedWith('ZeroAmountNotAllowed()');
+      ).to.revertedWith('PriceOracle__ZeroAmountNotAllowed()');
     });
 
     it('reverts if one of the underlying tokens do not have a feed', async () => {
@@ -165,7 +165,7 @@ describe('PriceOracle', () => {
           volatilePair.address,
           parseEther('1')
         )
-      ).to.be.revertedWith('PriceFeedNotFound(address)');
+      ).to.be.revertedWith('PriceOracle__PriceFeedNotFound(address)');
 
       await Promise.all([
         oracle.setUSDFeed(weth.address, ETH_USD_FEED),
@@ -178,7 +178,7 @@ describe('PriceOracle', () => {
           volatilePair.address,
           parseEther('1')
         )
-      ).to.be.revertedWith('PriceFeedNotFound(address)');
+      ).to.be.revertedWith('PriceOracle__PriceFeedNotFound(address)');
     });
 
     it('reverts if any of price feeds returns zero', async () => {
@@ -190,7 +190,7 @@ describe('PriceOracle', () => {
           volatilePair.address,
           parseEther('1')
         )
-      ).to.be.revertedWith('InvalidPriceFeedAnswer(int256)');
+      ).to.be.revertedWith('PriceOracle__InvalidPriceFeedAnswer(int256)');
 
       await Promise.all([
         oracle.setUSDFeed(weth.address, ETH_USD_FEED),
@@ -203,7 +203,7 @@ describe('PriceOracle', () => {
           volatilePair.address,
           parseEther('1')
         )
-      ).to.be.revertedWith('InvalidPriceFeedAnswer(int256)');
+      ).to.be.revertedWith('PriceOracle__InvalidPriceFeedAnswer(int256)');
     });
 
     it('calculates the fair price of a LP token', async () => {
