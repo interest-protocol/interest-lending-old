@@ -89,6 +89,12 @@ contract ITokenBase is
      */
     uint256 internal _totalBorrows;
 
+    /**
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain
+     */
+    uint256[50] private __gap;
+
     /*///////////////////////////////////////////////////////////////
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
@@ -107,7 +113,9 @@ contract ITokenBase is
         // Sets the owner to the {msg.sender}
         __Ownable_init();
 
-        string memory _name = string(abi.encodePacked("I", _asset.name()));
+        string memory _name = string(
+            abi.encodePacked("Interest ", _asset.name())
+        );
 
         // Global state
         name = _name;

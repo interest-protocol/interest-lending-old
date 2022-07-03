@@ -12,8 +12,8 @@ import {
   deploy,
   deployUUPS,
   getDigest,
+  getDomainSeparator,
   getECSign,
-  getPairDomainSeparator,
   multiDeploy,
   PRIVATE_KEYS,
   upgrade,
@@ -71,13 +71,13 @@ describe('ITokenBase', () => {
     ]);
 
     expect(_owner).to.be.equal(owner.address);
-    expect(name).to.be.equal('IBitcoin');
+    expect(name).to.be.equal('Interest Bitcoin');
     expect(symbol).to.be.equal('iBTC');
     expect(decimals).to.be.equal(8);
     expect(_manager).to.be.equal(manager.address);
     expect(accrualBlockNumber.gte(deployedBlockNumber)).to.be.equal(true);
     expect(DOMAIN_SEPARATOR).to.be.equal(
-      getPairDomainSeparator(sut.address, 'IBitcoin', chainId)
+      getDomainSeparator(sut.address, 'Interest Bitcoin', chainId)
     );
   });
 
@@ -246,11 +246,7 @@ describe('ITokenBase', () => {
     it('reverts if the recovered address is wrong', async () => {
       const chainId = network.config.chainId || 0;
       const name = await sut.name();
-      const domainSeparator = getPairDomainSeparator(
-        sut.address,
-        name,
-        chainId
-      );
+      const domainSeparator = getDomainSeparator(sut.address, name, chainId);
 
       const digest = getDigest(
         domainSeparator,
@@ -300,11 +296,7 @@ describe('ITokenBase', () => {
     it('allows for permit call to give allowance', async () => {
       const chainId = network.config.chainId || 0;
       const name = await sut.name();
-      const domainSeparator = getPairDomainSeparator(
-        sut.address,
-        name,
-        chainId
-      );
+      const domainSeparator = getDomainSeparator(sut.address, name, chainId);
 
       const digest = getDigest(
         domainSeparator,

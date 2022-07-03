@@ -14,6 +14,7 @@ import "./interfaces/ManagerInterface.sol";
 import "./lib/Math.sol";
 
 import "./ITokenBase.sol";
+import "hardhat/console.sol";
 
 /**
  * @notice The term assets refers to the underlying token stored in this contract. The term shares refers to the token of this contract itself that is used to keep track of how many assets a user owns.
@@ -41,6 +42,11 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     InterestRateModelInterface public interestRateModel;
 
     /**
+     * @notice Percentage of the borrow rate kept by the protocol as reserves.
+     */
+    uint256 public reserveFactorMantissa;
+
+    /**
      * @notice Sanity check to make sure the borrow rate is not very high (.0005% / block). Token from Compound.
      */
     uint256 internal constant RESERVE_FACTOR_MAX_MANTISSA = 0.3e18;
@@ -49,11 +55,6 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      * @notice Share of seized collateral that is added to reserves.
      */
     uint256 internal constant PROTOCOL_SEIZE_SHARE_MANTISSA = 0.28e18; //2.8%
-
-    /**
-     * @notice Percentage of the borrow rate kept by the protocol as reserves.
-     */
-    uint256 public reserveFactorMantissa;
 
     /**
      * @notice Total amount of reserves of the asset held in this market
@@ -81,8 +82,9 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         InterestRateModelInterface _interestRateModel
     ) external initializer {
         __ITokenBase_init(_asset, _manager);
-        interestRateModel = _interestRateModel;
 
+        asset = address(_asset);
+        interestRateModel = _interestRateModel;
         reserveFactorMantissa = 0.2e18;
 
         unchecked {
@@ -107,10 +109,8 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
      * @notice Returns the amount of {asset} managed by this contract.
      */
     function totalAssets() external view returns (uint256) {
-        (uint256 newTotalBorrows, uint256 newTotalReserves, ) = _accrueLogic(
-            _blocksDelta()
-        );
-        return _getCash() + newTotalBorrows + newTotalReserves;
+        (uint256 newTotalBorrows, , ) = _accrueView();
+        return _getCash() + newTotalBorrows;
     }
 
     /// @notice The amount of shares that the vault would
@@ -139,8 +139,11 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     /// be deposited by `owner` into the Vault, where `owner`
     /// corresponds to the input parameter `receiver` of a
     /// `deposit` call.
-    function maxDeposit(address) external pure returns (uint256) {
-        return type(uint256).max;
+    function maxDeposit(address) external view returns (uint256) {
+        ///@notice This market has no limit.
+        return
+            IERC20Upgradeable(asset).totalSupply() -
+            convertToAssets(totalSupply);
     }
 
     /// @notice Allows an on-chain or off-chain user to simulate
@@ -168,8 +171,10 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
     /// @notice Total number of underlying shares that can be minted
     /// for `owner`, where `owner` corresponds to the input
     /// parameter `receiver` of a `mint` call.
-    function maxMint(address) external pure returns (uint256) {
-        return type(uint256).max;
+    function maxMint(address) external view returns (uint256) {
+        return
+            convertToShares(IERC20Upgradeable(asset).totalSupply()) -
+            totalSupply;
     }
 
     /// @notice Total number of underlying assets that can be
@@ -404,7 +409,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         );
     }
 
-    function borrow(address receiver, uint256 assets)
+    function borrow(uint256 assets, address receiver)
         external
         accrue
         nonReentrant
@@ -583,7 +588,7 @@ contract ITokenMarket is Initializable, ITokenBase, ITokenMarketInterface {
         uint256 assets,
         uint256 shares
     ) internal {
-        if (0 != shares || 0 != assets)
+        if (0 == shares || 0 == assets)
             revert ITokenMarket__ZeroAmountNotAllowed();
 
         address sender = _msgSender();

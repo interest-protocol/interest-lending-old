@@ -132,7 +132,7 @@ export enum AssetType {
 
 //  EIP-2612 Logic
 
-export const getPairDomainSeparator = (
+export const getDomainSeparator = (
   address: string,
   name: string,
   chainId: number
@@ -207,3 +207,6 @@ export const getECSign = (privateKey: string, digest: string) =>
     Buffer.from(digest.slice(2), 'hex'),
     Buffer.from(privateKey.replace('0x', ''), 'hex')
   );
+
+export const calculateInitialExchangeRateMantissa = (decimals: number) =>
+  BigNumber.from(10).pow(BigNumber.from(decimals).add(8)).mul(2);

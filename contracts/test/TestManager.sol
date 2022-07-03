@@ -5,8 +5,20 @@ pragma solidity 0.8.15;
 contract TestManager {
     bool _transferAllowed;
 
+    bool _depositAllowed;
+
+    bool _borrowAllowed;
+
     function setTransferAllowed(bool value) external {
         _transferAllowed = value;
+    }
+
+    function setDepositAllowed(bool value) external {
+        _depositAllowed = value;
+    }
+
+    function setBorrowAllowed(bool value) external {
+        _borrowAllowed = value;
     }
 
     function transferAllowed(
@@ -19,11 +31,13 @@ contract TestManager {
     }
 
     function depositAllowed(
-        address iToken,
-        address from,
-        address to,
-        uint256 assets
-    ) external returns (bool) {}
+        address,
+        address,
+        address,
+        uint256
+    ) external returns (bool) {
+        return _depositAllowed;
+    }
 
     function withdrawAllowed(
         address iToken,
@@ -33,11 +47,13 @@ contract TestManager {
     ) external returns (bool) {}
 
     function borrowAllowed(
-        address iToken,
-        address from,
-        address to,
-        uint256 assets
-    ) external returns (bool) {}
+        address,
+        address,
+        address,
+        uint256
+    ) external returns (bool) {
+        return _borrowAllowed;
+    }
 
     function repayAllowed(
         address iToken,
